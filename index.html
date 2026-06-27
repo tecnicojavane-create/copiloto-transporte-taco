@@ -61,9 +61,9 @@
   }
 
   /* ── MAIN LAYOUT ── */
-  #main { display: flex; flex: 1; overflow: hidden; }
+  #main { display: flex; flex: 1; overflow: hidden; position: relative; }
 
-  /* ── SIDEBAR ── */
+  /* ── SIDEBAR (DRAWER POR DEFECTO PARA MÓVILES) ── */
   #sidebar {
     width: 260px; background: var(--sidebar);
     border-right: 1px solid var(--border);
@@ -71,8 +71,11 @@
     transition: transform 0.3s ease;
     z-index: 100; flex-shrink: 0;
     overflow-y: auto;
+    position: absolute; top: 0; left: 0; height: 100%;
   }
-  #sidebar.hidden { transform: translateX(-100%); position: absolute; height: calc(100% - 60px); }
+  #sidebar.hidden { transform: translateX(-100%); }
+  #sidebar:not(.hidden) { box-shadow: 4px 0 20px rgba(0,0,0,0.6); }
+
   #sidebar .menu-label {
     font-size: 10px; font-weight: 700; color: var(--dim);
     padding: 14px 16px 6px; letter-spacing: 1px;
@@ -100,7 +103,7 @@
     padding: 16px; padding-bottom: calc(16px + var(--safe-bottom));
   }
 
-  /* ── OVERLAY (sidebar mobile) ── */
+  /* ── OVERLAY ── */
   #overlay {
     display: none; position: fixed; inset: 0;
     background: rgba(0,0,0,0.6); z-index: 99;
@@ -270,15 +273,16 @@
   }
   #map-iframe { width: 100%; height: 100%; border: none; border-radius: var(--radius); }
 
-  /* RESPONSIVE — desktop muestra sidebar fijo */
-  @media (min-width: 768px) {
+  /* ── RESPONSIVE ADAPTATIVO GENERACIÓN CORREGIDA ── */
+  /* Solo pantallas grandes de PC de escritorio fijarán el menú lateral de forma persistente */
+  @media (min-width: 1024px) {
     #menu-toggle { display: none; }
-    #sidebar { transform: none !important; position: relative; }
+    #sidebar { 
+      position: relative; 
+      transform: none !important; 
+      box-shadow: none !important; 
+    }
     #overlay { display: none !important; }
-  }
-  @media (max-width: 767px) {
-    #sidebar { position: absolute; top: 0; left: 0; height: 100%; }
-    #sidebar:not(.hidden) { box-shadow: 4px 0 20px rgba(0,0,0,0.5); }
   }
 
   /* SCROLLBAR */
@@ -337,7 +341,6 @@
 
     <div id="content">
 
-      <!-- SECCIÓN: TACÓGRAFO -->
       <div id="sec-tacografo" class="section active">
         <div class="page-title">🚛 SISTEMA DE TACÓGRAFO INTELIGENTE</div>
         <div class="seg-btn-group" id="vehiculo-selector">
@@ -381,7 +384,6 @@
         </div>
       </div>
 
-      <!-- SECCIÓN: CRONÓMETRO -->
       <div id="sec-cronometro" class="section">
         <div class="page-title">⏱️ CRONÓMETRO DE CONDUCCIÓN EN VIVO</div>
         <div class="card">
@@ -402,7 +404,6 @@
         </div>
       </div>
 
-      <!-- SECCIÓN: ESPECIAL -->
       <div id="sec-especial" class="section">
         <div class="page-title">⚠️ CALCULADOR DE TRANSPORTE ESPECIAL</div>
         <div class="card">
@@ -418,7 +419,6 @@
         <div class="result-box" id="esp-resultado">Introduce los datos del convoy y pulsa Auditar.</div>
       </div>
 
-      <!-- SECCIÓN: GPS -->
       <div id="sec-gps" class="section">
         <div class="page-title">🗺️ NAVEGADOR GPS Y DETECCIÓN DE GÁLIBOS</div>
         <div class="card" style="padding:10px">
@@ -435,7 +435,6 @@
         <div class="result-box" id="gps-resultado" style="min-height:120px">Introduce un destino para trazar la ruta pesada.</div>
       </div>
 
-      <!-- SECCIÓN: DGT -->
       <div id="sec-dgt" class="section">
         <div class="page-title">🛑 RESTRICCIONES DGT POR FECHA</div>
         <div class="card">
@@ -459,7 +458,6 @@
         <div class="result-box" id="dgt-resultado">Selecciona una fecha y pulsa Buscar.</div>
       </div>
 
-      <!-- SECCIÓN: LOTT -->
       <div id="sec-lott" class="section">
         <div class="page-title">⚖️ AUDITORÍA DE SANCIONES LOTT</div>
         <div class="card">
@@ -477,7 +475,6 @@
         <div class="result-box" id="lott-resultado">Selecciona una infracción para ver el baremo.</div>
       </div>
 
-      <!-- SECCIÓN: NORMATIVA -->
       <div id="sec-normativa" class="section">
         <div class="page-title">🇪🇺 BUSCADOR DE NORMATIVA EUROPEA</div>
         <div class="card">
@@ -490,7 +487,6 @@
         <div class="result-box" id="norm-resultado">Introduce un concepto reglamentario.</div>
       </div>
 
-      <!-- SECCIÓN: ZBE -->
       <div id="sec-zbe" class="section">
         <div class="page-title">🏙️ RESTRICCIONES ZBE URBANAS</div>
         <div class="card">
@@ -517,7 +513,6 @@
         <div class="result-box" id="zbe-resultado">Verifica el acceso ambiental urbano.</div>
       </div>
 
-      <!-- SECCIÓN: RECURSOS -->
       <div id="sec-recursos" class="section">
         <div class="page-title">📑 GENERADOR DE RECURSOS ADMINISTRATIVOS</div>
         <div class="card">
@@ -528,7 +523,6 @@
         <div class="result-box" id="rec-resultado">Genera plantillas de descargo legales automáticamente.</div>
       </div>
 
-      <!-- SECCIÓN: ASISTENTE IA -->
       <div id="sec-asistente" class="section">
         <div class="page-title">🤖 PREGÚNTAME COCHERA (IA)</div>
         <div class="card">
@@ -538,7 +532,6 @@
         <div class="result-box" id="ia-resultado">Asistente listo.</div>
       </div>
 
-      <!-- SECCIÓN: TIQUES OCR -->
       <div id="sec-tique" class="section">
         <div class="page-title">📸 AUDITAR TIQUE DE TACÓGRAFO</div>
         <div class="card">
@@ -556,7 +549,6 @@
         <div class="result-box" id="tique-resultado">Sube el listado impreso del tacógrafo.</div>
       </div>
 
-      <!-- SECCIÓN: CONFIGURACIÓN -->
       <div id="sec-config" class="section">
         <div class="page-title">⚙️ CONFIGURACIÓN</div>
         <div class="card">
@@ -573,7 +565,7 @@
 
 <script>
 // ============================================================================
-// 📱 CONTROL DE ORIENTACIÓN (CIERRE EN HORIZONTAL)
+// 📱 CONTROL DE ORIENTACIÓN AUTOMÁTICO
 // ============================================================================
 const mqlLandscape = window.matchMedia("(orientation: landscape)");
 function comprobarOrientacion(e) { if (e.matches) closeSidebar(); }
@@ -581,7 +573,7 @@ mqlLandscape.addEventListener("change", comprobarOrientacion);
 comprobarOrientacion(mqlLandscape);
 
 // ============================================================================
-// ⚙️ NAVEGACIÓN CORREGIDA (CIERRE DE PESTAÑAS SEGURO)
+// ⚙️ SISTEMA DE CONTROL DE PESTAÑAS (SIDEBAR)
 // ============================================================================
 function toggleSidebar() {
   const sidebar = document.getElementById('sidebar');
@@ -598,22 +590,17 @@ function closeSidebar() {
 }
 
 function showSection(sectionId, btnElement) {
-  // 1. Ocultar todas las secciones de contenido
   document.querySelectorAll('.section').forEach(sec => sec.classList.remove('active'));
-  
-  // 2. Limpiar estados activos de las pestañas del menú lateral
   document.querySelectorAll('.menu-btn').forEach(btn => btn.classList.remove('active'));
   
-  // 3. Activar la sección correspondiente
   const targetSec = document.getElementById(`sec-${sectionId}`);
   if (targetSec) targetSec.classList.add('active');
   
-  // 4. Marcar la pestaña actual como activa sin depender de window.event
   if (btnElement) {
     btnElement.classList.add('active');
   }
   
-  // 5. Cerrar de inmediato el panel drawer (pestañas) en móviles
+  // Fuerza el cierre del drawer tanto en modo vertical como horizontal en móviles
   closeSidebar();
 }
 
@@ -699,7 +686,7 @@ function calcularRutaGPS() {
 }
 function abrirGoogleMaps() {
   const dest = document.getElementById('gps-destino').value;
-  if(dest) window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(dest)}`, '_blank');
+  if(dest) window.open(`https://maps.google.com/maps?q=${encodeURIComponent(dest)}`, '_blank');
 }
 function reiniciarGPS() {
   document.getElementById('gps-destino').value = '';
@@ -728,7 +715,7 @@ function generarRecurso() {
 }
 function preguntarIA() {
   const p = document.getElementById('ia-prompt').value;
-  document.getElementById('ia-resultado').innerText = `🤖 [Simulación Gemini 2.5 Flash]:\n\nSobre tu consulta de "${p || 'descanso'}": El paquete de movilidad europeo permite exceder hasta en 1 hora la conducción diaria para llegar al centro de operaciones o al domicilio a realizar un descanso semanal, siempre que no comprometa la seguridad vial y se registre manualmente al reverso del tique.`;
+  document.getElementById('ia-resultado').innerText = `🤖 [Simulación Gemini]:\n\nSobre tu consulta de "${p || 'descanso'}": El paquete de movilidad europeo permite exceder hasta en 1 hora la conducción diaria para llegar al centro de operaciones o al domicilio a realizar un descanso semanal, siempre que no comprometa la seguridad vial y se registre manualmente al reverso del tique.`;
 }
 function cargarTique(i) {
   if (i.files && i.files[0]) {
@@ -771,9 +758,6 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 
-<!-- ============================================================================
-     📦 GENERADOR DE MANIFEST PWA VECTORIAL ALTA RESOLUCIÓN (512x512)
-     ============================================================================ -->
 <script>
 (() => {
   const svgIcono = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
