@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Copiloto PWA</title>
+    <meta name="theme-color" content="#1e1e2f">
+    
+    <!-- Configuración PWA -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-canvas">
+
+    <!-- Leaflet CSS para el Mapa Móvil -->
+    <link rel="stylesheet" href="https://unpkg.com" crossorigin="" />
+
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: system-ui, -apple-system, sans-serif; 
+            background: #121214; 
+            color: #ffffff; 
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; 
+            overflow: hidden;
+        }
+        
+        /* Contenedor del Mapa */
+        #map { 
+            flex: 1; 
+            width: 100%; 
+            z-index: 1;
+        }
+
+        /* Panel de datos superpuesto */
+        .dashboard { 
+            background: rgba(30, 30, 36, 0.95); 
+            padding: 15px; 
+            border-top-left-radius: 20px; 
+            border-top-right-radius: 20px; 
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.4); 
+            text-align: center;
+            z-index: 10;
+            backdrop-filter: blur(10px);
+        }
+        
+        h1 { font-size: 1.2rem; margin-bottom: 5px; color: #4fc3f7; }
+        .grid-datos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0; }
+        .data-box { background: #2a2a35; padding: 10px; border-radius: 8px; font-size: 0.85rem; text-align: left; }
+        .data-box b { color: #4fc3f7; }
+        
+        #estado { margin: 10px 0; color: #ffbc00; font-weight: 500; font-size: 0.9rem; }
+
+        /* Botón Flotante de Voz */
+        .btn-mic { 
+            position: absolute; 
+            bottom: 160px; 
+            right: 20px; 
+            background: #ff4757; 
+            color: white; 
+            border: none; 
+            width: 65px; 
+            height: 65px; 
+            border-radius: 50%; 
+            font-size: 1.6rem; 
+            cursor: pointer; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            box-shadow: 0 4px 15px rgba(255, 71, 87, 0.5); 
+            z-index: 100;
+            transition: transform 0.2s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn-mic.recording { background: #2ed573; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+    </style>
+</head>
+<body>
+
+    <!-- Mapa de navegación de pantalla completa -->
+    <div id="map"></div>
+
+    <!-- Botón flotante para interactuar con la IA de voz -->
+    <button class="btn-mic" id="btn-voz">🎙️</button>
+
+    <!-- Cuadro de mandos inferior -->
+<!-- Cuadro de mandos inferior -->
+    <div class="dashboard">
+        <h1>Copiloto Activo</h1>
+        <div id="estado">Pulsa el micrófono para hablar</div>
+        
+        <!-- Botón de inicialización de seguridad para móviles modernos -->
+        <button id="btn-permisos" style="background: #2ed573; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; margin-bottom: 10px; width: 100%; display: block;">
+            🚀 Activar GPS y Copiloto
+        </button>
+
+        <div class="grid-datos">
+            <div class="data-box">📍 <b>GPS:</b> <br><span id="gps">Buscando...</span></div>
+            <div class="data-box">🚀 <b>Velocidad:</b> <br><span id="velocidad">0 km/h</span></div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com" crossorigin=""></script>
+
+    <script>
+        // Registrar Service Worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').catch(err => console.log("Error SW:", err));
+        }
+
+        // Inicializar Mapa
+        const map = L.map('map', { zoomControl: false }).setView([40.4167, -3.7037], 15); 
+        L.control.zoom({ position: 'topright' }).addTo(map);
+
+        L.tileLayer('https://{s}://{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap'
+        }).addTo(map);
+
+        let marker = L.circleMarker([40.4167, -3.7037], {
+            color: '#4fc3f7', fillColor: '#00bcd4', fillOpacity: 0.8, radius: 10
+        }).addTo(map);
+
+        let primeraLectura = true;
+        let watchId = null;
+
+        // Gestión Inteligente de Permisos con el botón verde
+        document.getElementById('btn-permisos').addEventListener('click', async () => {
+            // 1. Forzar encendido y desbloqueo de la síntesis de voz (Requisito de iOS/Android)
+            window.speechSynthesis.cancel();
+            const inicioVoz = new SpeechSynthesisUtterance("Copiloto de transporte iniciado. Buen viaje.");
+            inicioVoz.lang = 'es-ES';
+            window.speechSynthesis.speak(inicioVoz);
+
+            // 2. Solicitar Micrófono preventivamente
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                stream.getTracks().forEach(track => track.stop()); // Apagarlo tras recibir el permiso
+            } catch (e) {
+                alert("Para usar el asistente de voz, por favor permite el acceso al micrófono.");
+            }
+
+            // 3. Activar el rastreo por GPS de alta precisión
+            if ("geolocation" in navigator) {
+                if (watchId) navigator.geolocation.clearWatch(watchId);
+                
+                watchId = navigator.geolocation.watchPosition(pos => {
+                    const lat = pos.coords.latitude;
+                    const lon = pos.coords.longitude;
+                    const speed = pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 0;
+                    
+                    document.getElementById('gps').innerText = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+                    document.getElementById('velocidad').innerText = `${speed} km/h`;
+
+                    const nuevaPos = [lat, lon];
+                    marker.setLatLng(nuevaPos);
+                    
+                    if (primeraLectura) {
+                        map.setView(nuevaPos, 16);
+                        primeraLectura = false;
+                    } else {
+                        map.panTo(nuevaPos);
+                    }
+                }, err => {
+                    document.getElementById('gps').innerText = "Sin señal GPS o permiso denegado";
+                }, { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
+
+                // Ocultar botón una vez activado con éxito
+                document.getElementById('btn-permisos').style.display = 'none';
+            }
+        });
+
+        // Configuración del botón del micrófono flotante
+        const btnVoz = document.getElementById('btn-voz');
+        const estado = document.getElementById('estado');
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+        if (SpeechRecognition) {
+            const recognition = new SpeechRecognition();
+            recognition.lang = 'es-ES';
+            recognition.continuous = false;
+
+            btnVoz.addEventListener('click', () => {
+                try { recognition.start(); } catch(e) { recognition.stop(); }
+            });
+
+            recognition.onstart = () => {
+                btnVoz.classList.add('recording');
+                estado.innerText = "Te escucho...";
+                if (navigator.vibrate) navigator.vibrate(40);
+            };
+
+            recognition.onresult = (event) => {
+                const texto = event.results.transcript.toLowerCase();
+                estado.innerText = `Comando: "${texto}"`;
+                procesarComando(texto);
+            };
+
+            recognition.onend = () => { btnVoz.classList.remove('recording'); };
+        } else {
+            estado.innerText = "Dictado de voz no soportado en este navegador.";
+        }
+
+        function hablar(texto) {
+            window.speechSynthesis.cancel();
+            const voz = new SpeechSynthesisUtterance(texto);
+            voz.lang = 'es-ES';
+            window.speechSynthesis.speak(voz);
+        }
+
+        function procesarComando(comando) {
+            if (comando.includes('dónde estoy') || comando.includes('ubicación')) {
+                const coord = marker.getLatLng();
+                hablar(`Te encuentras en las coordenadas aproximadas ${coord.lat.toFixed(2)} grados Norte y ${coord.lng.toFixed(2)} grados Oeste.`);
+            } else if (comando.includes('velocidad') || comando.includes('rápido')) {
+                const vel = document.getElementById('velocidad').innerText;
+                hablar(`Tu velocidad de circulación es de ${vel}`);
+            } else if (comando.includes('auxilio') || comando.includes('emergencia') || comando.includes('ayuda')) {
+                hablar("Alerta de emergencia detectada. Iniciando llamada de auxilio.");
+                if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+                setTimeout(() => { window.location.href = "tel:112"; }, 1500);
+            } else {
+                hablar("Comando recibido. Monitoreando tu trayecto.");
+            }
+        }
+    </script>
+</body>
+</html>
+    

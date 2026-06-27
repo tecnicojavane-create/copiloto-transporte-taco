@@ -1,0 +1,17 @@
+{
+  "name": "Copiloto Inteligente de Transporte",
+  "short_name": "Copiloto",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#121214",
+  "theme_color": "#1e1e2f",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
