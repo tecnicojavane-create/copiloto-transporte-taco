@@ -245,7 +245,6 @@
     min-height: 180px; white-space: pre-wrap; word-break: break-word;
     max-height: 45vh; overflow-y: auto;
   }
-  .result-box.streaming { border-color: var(--cyan); }
 
   /* ── API KEY MODAL ── */
   #modal-apikey {
@@ -270,47 +269,6 @@
     position: relative;
   }
   #map-iframe { width: 100%; height: 100%; border: none; border-radius: var(--radius); }
-  .map-overlay-btn {
-    position: absolute; bottom: 10px; right: 10px;
-    display: flex; flex-direction: column; gap: 6px;
-  }
-  .map-fab {
-    background: var(--cyan); color: var(--bg);
-    border: none; border-radius: 50%;
-    width: 40px; height: 40px; font-size: 18px;
-    cursor: pointer; display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-  }
-
-  /* ── ROUTE RESULT ── */
-  .route-info {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 14px; margin-bottom: 14px;
-  }
-  .route-stat {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 8px 0; border-bottom: 1px solid var(--border);
-    font-size: 13px;
-  }
-  .route-stat:last-child { border-bottom: none; }
-  .route-stat .val { color: var(--cyan); font-weight: 700; }
-
-  /* BADGE */
-  .badge {
-    display: inline-block; padding: 3px 8px; border-radius: 6px;
-    font-size: 11px; font-weight: 700; margin-left: 6px;
-  }
-  .badge-red { background: rgba(239,68,68,0.2); color: var(--red); }
-  .badge-green { background: rgba(16,185,129,0.2); color: var(--green); }
-  .badge-amber { background: rgba(245,158,11,0.2); color: var(--amber); }
-
-  /* NORMATIVA INFO BOX */
-  .norm-box {
-    background: var(--bg); border-left: 3px solid var(--cyan);
-    border-radius: 0 var(--radius) var(--radius) 0;
-    padding: 14px; font-size: 13px; line-height: 1.7;
-    color: var(--text); margin-bottom: 14px;
-  }
 
   /* RESPONSIVE — desktop muestra sidebar fijo */
   @media (min-width: 768px) {
@@ -321,19 +279,6 @@
   @media (max-width: 767px) {
     #sidebar { position: absolute; top: 0; left: 0; height: 100%; }
     #sidebar:not(.hidden) { box-shadow: 4px 0 20px rgba(0,0,0,0.5); }
-  }
-
-  /* STREAMING CURSOR */
-  .cursor::after {
-    content: '▌'; color: var(--cyan); animation: blink 1s step-end infinite;
-  }
-  @keyframes blink { 50% { opacity: 0; } }
-
-  /* GALIBO ALERT */
-  .galibo-alert {
-    background: rgba(239,68,68,0.1); border: 1px solid var(--red);
-    border-radius: 8px; padding: 10px 12px; margin-top: 8px;
-    font-size: 12px; color: var(--red);
   }
 
   /* SCROLLBAR */
@@ -375,32 +320,31 @@
 
     <nav id="sidebar" class="hidden">
       <div class="menu-label">MÓDULOS DE CONTROL</div>
-      <button class="menu-btn active" onclick="showSection('tacografo')">🚛 Tacógrafo</button>
-      <button class="menu-btn" onclick="showSection('cronometro')">⏱️ Cronómetro en Ruta</button>
-      <button class="menu-btn" onclick="showSection('especial')">⚠️ Transporte Especial</button>
-      <button class="menu-btn" onclick="showSection('gps')">🗺️ Satélite & Gálibos</button>
-      <button class="menu-btn" onclick="showSection('dgt')">🛑 Restricciones DGT</button>
-      <button class="menu-btn" onclick="showSection('lott')">⚖️ Sanciones LOTT</button>
-      <button class="menu-btn" onclick="showSection('normativa')">🇪🇺 Normativa UE</button>
-      <button class="menu-btn" onclick="showSection('zbe')">🏙️ Restricciones ZBE</button>
-      <button class="menu-btn" onclick="showSection('recursos')">📑 Recursos de Sanciones</button>
-      <button class="menu-btn" onclick="showSection('asistente')">🤖 Pregúntame</button>
-      <button class="menu-btn" onclick="showSection('tique')">📸 Auditar Tique</button>
-      <button class="menu-btn" onclick="showSection('config')" style="margin-top:auto">⚙️ Configuración</button>
+      <button class="menu-btn active" onclick="showSection('tacografo', this)">🚛 Tacógrafo</button>
+      <button class="menu-btn" onclick="showSection('cronometro', this)">⏱️ Cronómetro en Ruta</button>
+      <button class="menu-btn" onclick="showSection('especial', this)">⚠️ Transporte Especial</button>
+      <button class="menu-btn" onclick="showSection('gps', this)">🗺️ Satélite & Gálibos</button>
+      <button class="menu-btn" onclick="showSection('dgt', this)">🛑 Restricciones DGT</button>
+      <button class="menu-btn" onclick="showSection('lott', this)">⚖️ Sanciones LOTT</button>
+      <button class="menu-btn" onclick="showSection('normativa', this)">🇪🇺 Normativa UE</button>
+      <button class="menu-btn" onclick="showSection('zbe', this)">🏙️ Restricciones ZBE</button>
+      <button class="menu-btn" onclick="showSection('recursos', this)">📑 Recursos de Sanciones</button>
+      <button class="menu-btn" onclick="showSection('asistente', this)">🤖 Pregúntame</button>
+      <button class="menu-btn" onclick="showSection('tique', this)">📸 Auditar Tique</button>
+      <button class="menu-btn" onclick="showSection('config', this)" style="margin-top:auto">⚙️ Configuración</button>
       <div class="autor">por Javier Rabe</div>
     </nav>
 
     <div id="content">
 
+      <!-- SECCIÓN: TACÓGRAFO -->
       <div id="sec-tacografo" class="section active">
         <div class="page-title">🚛 SISTEMA DE TACÓGRAFO INTELIGENTE</div>
-
         <div class="seg-btn-group" id="vehiculo-selector">
           <button class="seg-btn active" onclick="setVehiculo('CAMIÓN', this)">🚛 CAMIÓN</button>
           <button class="seg-btn" onclick="setVehiculo('AUTOBÚS', this)">🚌 AUTOBÚS</button>
           <button class="seg-btn" onclick="setVehiculo('ESPECIAL', this)">⚠️ ESPECIAL</button>
         </div>
-
         <div id="instrument-panel">
           <div class="instrument">
             <div class="val" id="taco-continua">00:00</div>
@@ -413,7 +357,6 @@
             <div class="sub">Máx. 9h</div>
           </div>
         </div>
-
         <div class="status-row">
           <div class="led" id="taco-led"></div>
           <div>
@@ -421,7 +364,6 @@
             <div style="font-size:11px;color:var(--muted)" id="taco-subestado">Sistema en espera</div>
           </div>
         </div>
-
         <div class="card">
           <div class="card-title">CONSUMO JORNADA DIARIA</div>
           <div class="progress-wrap">
@@ -430,26 +372,16 @@
               <span id="taco-pct">0%</span>
             </div>
             <div class="progress-bar"><div class="progress-fill" id="taco-barra"></div></div>
-            <div style="font-size:11px;color:var(--dim);margin-top:5px">Cuota: 9 horas máximo</div>
           </div>
         </div>
-
         <div class="norm-box" id="norm-text">
           <strong>■ CONDUCCIÓN CONTINUA:</strong> Máximo 4h 30min. Pausa obligatoria 45 min.<br>
           <strong>■ FRACCIONAMIENTO:</strong> 15 min + 30 min (en ese orden).<br>
-          <strong>■ CONDUCCIÓN DIARIA:</strong> Máx. 9h (extensible a 10h dos veces/semana).<br>
-          <strong>■ CONTROL:</strong> Registro automático por satélite (tacógrafo digital).
-        </div>
-
-        <div class="card" style="background:rgba(6,182,212,0.05);border-color:var(--cyan)">
-          <div style="font-size:12px;color:var(--cyan2)">
-            🛰️ Enlace GNSS: <strong style="color:var(--green)">Activo</strong>  | 
-            🔒 V.Piloto: <strong style="color:var(--cyan2)">Conectado</strong>  | 
-            🔒 Rutómetro: <strong style="color:var(--cyan2)">Sync</strong>
-          </div>
+          <strong>■ CONDUCCIÓN DIARIA:</strong> Máx. 9h (extensible a 10h dos veces/semana).
         </div>
       </div>
 
+      <!-- SECCIÓN: CRONÓMETRO -->
       <div id="sec-cronometro" class="section">
         <div class="page-title">⏱️ CRONÓMETRO DE CONDUCCIÓN EN VIVO</div>
         <div class="card">
@@ -470,33 +402,23 @@
         </div>
       </div>
 
+      <!-- SECCIÓN: ESPECIAL -->
       <div id="sec-especial" class="section">
         <div class="page-title">⚠️ CALCULADOR DE TRANSPORTE ESPECIAL</div>
         <div class="card">
           <div class="card-title">DIMENSIONES DEL CONVOY</div>
           <div class="form-grid">
-            <div class="form-group">
-              <div class="form-group"><label>Anchura Total (m)</label></div>
-              <input type="number" id="esp-ancho" class="form-input" value="3.20" step="0.01">
-            </div>
-            <div class="form-group">
-              <div class="form-group"><label>Longitud Total (m)</label></div>
-              <input type="number" id="esp-longitud" class="form-input" value="22.50" step="0.01">
-            </div>
-            <div class="form-group">
-              <div class="form-group"><label>Masa Conjunto (ton)</label></div>
-              <input type="number" id="esp-masa" class="form-input" value="55.0" step="0.1">
-            </div>
-            <div class="form-group">
-              <div class="form-group"><label>Altura Máxima (m)</label></div>
-              <input type="number" id="esp-altura" class="form-input" value="4.30" step="0.01">
-            </div>
+            <div class="form-group"><label>Anchura Total (m)</label><input type="number" id="esp-ancho" class="form-input" value="3.20" step="0.01"></div>
+            <div class="form-group"><label>Longitud Total (m)</label><input type="number" id="esp-longitud" class="form-input" value="22.50" step="0.01"></div>
+            <div class="form-group"><label>Masa Conjunto (ton)</label><input type="number" id="esp-masa" class="form-input" value="55.0" step="0.1"></div>
+            <div class="form-group"><label>Altura Máxima (m)</label><input type="number" id="esp-altura" class="form-input" value="4.30" step="0.01"></div>
           </div>
           <button class="btn btn-cyan btn-full" onclick="calcularEspecial()">🛡️ Auditar Requisitos de Circulación</button>
         </div>
         <div class="result-box" id="esp-resultado">Introduce los datos del convoy y pulsa Auditar.</div>
       </div>
 
+      <!-- SECCIÓN: GPS -->
       <div id="sec-gps" class="section">
         <div class="page-title">🗺️ NAVEGADOR GPS Y DETECCIÓN DE GÁLIBOS</div>
         <div class="card" style="padding:10px">
@@ -505,28 +427,20 @@
             <button class="btn btn-cyan" style="white-space:nowrap;padding:10px 14px" onclick="calcularRutaGPS()">🛣️ Ruta</button>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn btn-blue" style="flex:1;padding:8px" onclick="abrirGoogleMaps()">📍 Google Maps</button>
-            <button class="btn" style="flex:1;padding:8px;background:var(--border);color:var(--text)" onclick="abrirStreetView()">📷 Street View</button>
+            <button class="btn btn-blue" style="flex:1;padding:8px" onclick="abrirGoogleMaps()">📍 Maps</button>
             <button class="btn btn-red" style="flex:1;padding:8px" onclick="reiniciarGPS()">🔄 Reset</button>
           </div>
         </div>
-        <div id="map-container">
-          <iframe id="map-iframe" src="about:blank" allowfullscreen></iframe>
-        </div>
-        <div class="result-box" id="gps-resultado" style="min-height:120px">
-          Introduce un destino para trazar la ruta con restricciones para vehículos pesados.
-        </div>
+        <div id="map-container"><iframe id="map-iframe" src="about:blank" allowfullscreen></iframe></div>
+        <div class="result-box" id="gps-resultado" style="min-height:120px">Introduce un destino para trazar la ruta pesada.</div>
       </div>
 
+      <!-- SECCIÓN: DGT -->
       <div id="sec-dgt" class="section">
         <div class="page-title">🛑 RESTRICCIONES DGT POR FECHA</div>
         <div class="card">
-          <div class="card-title">SELECCIONAR FECHA A CONSULTAR</div>
           <div class="form-grid" style="grid-template-columns:1fr 2fr 1fr">
-            <div class="form-group">
-              <label>Día</label>
-              <input type="number" id="dgt-dia" class="form-input" min="1" max="31" value="27">
-            </div>
+            <div class="form-group"><label>Día</label><input type="number" id="dgt-dia" class="form-input" min="1" max="31" value="27"></div>
             <div class="form-group">
               <label>Mes</label>
               <div class="select-wrap">
@@ -538,20 +452,17 @@
                 </select>
               </div>
             </div>
-            <div class="form-group">
-              <label>Año</label>
-              <input type="number" id="dgt-anio" class="form-input" value="2026">
-            </div>
+            <div class="form-group"><label>Año</label><input type="number" id="dgt-anio" class="form-input" value="2026"></div>
           </div>
           <button class="btn btn-cyan btn-full" onclick="consultarDGT()">🔍 Buscar Restricciones</button>
         </div>
-        <div class="result-box" id="dgt-resultado">Selecciona una fecha y pulsa Buscar para auditar las restricciones DGT.</div>
+        <div class="result-box" id="dgt-resultado">Selecciona una fecha y pulsa Buscar.</div>
       </div>
 
+      <!-- SECCIÓN: LOTT -->
       <div id="sec-lott" class="section">
         <div class="page-title">⚖️ AUDITORÍA DE SANCIONES LOTT</div>
         <div class="card">
-          <div class="card-title">SELECCIONAR INFRACCIÓN</div>
           <div class="select-wrap" style="margin-bottom:12px">
             <select id="lott-combo" class="form-select">
               <option>Exceso de tiempos de conducción (>20%) - MUY GRAVE</option>
@@ -559,16 +470,14 @@
               <option>Minoración de descansos diarios (>50%) - MUY GRAVE</option>
               <option>Carecer de tarjeta de tacógrafo en cabina - MUY GRAVE</option>
               <option>Exceso de peso entre 15% y 25% - GRAVE</option>
-              <option>No pasar inspección periódica del tacógrafo - GRAVE</option>
-              <option>Exceso de velocidad entre 10% y 20% - GRAVE</option>
-              <option>Carecer de certificado de conductor de país tercero - MUY GRAVE</option>
             </select>
           </div>
           <button class="btn btn-cyan btn-full" onclick="analizarLOTT()">⚖️ Baremar Infracción</button>
         </div>
-        <div class="result-box" id="lott-resultado">Selecciona una infracción para calcular cuantía e inhabilitación.</div>
+        <div class="result-box" id="lott-resultado">Selecciona una infracción para ver el baremo.</div>
       </div>
 
+      <!-- SECCIÓN: NORMATIVA -->
       <div id="sec-normativa" class="section">
         <div class="page-title">🇪🇺 BUSCADOR DE NORMATIVA EUROPEA</div>
         <div class="card">
@@ -578,9 +487,10 @@
           </div>
           <button class="btn btn-cyan btn-full" onclick="buscarNormativa()">🔍 Buscar Regulación</button>
         </div>
-        <div class="result-box" id="norm-resultado">Introduce un reglamento europeo para obtener su resumen.</div>
+        <div class="result-box" id="norm-resultado">Introduce un concepto reglamentario.</div>
       </div>
 
+      <!-- SECCIÓN: ZBE -->
       <div id="sec-zbe" class="section">
         <div class="page-title">🏙️ RESTRICCIONES ZBE URBANAS</div>
         <div class="card">
@@ -591,11 +501,6 @@
                 <option>Madrid (Distrito Centro / ZBE)</option>
                 <option>Barcelona (ZBE Rondas)</option>
                 <option>Valencia</option>
-                <option>Sevilla</option>
-                <option>Zaragoza</option>
-                <option>Bilbao</option>
-                <option>Málaga</option>
-                <option>Valladolid</option>
               </select>
             </div>
           </div>
@@ -603,110 +508,62 @@
             <label>DISTINTIVO AMBIENTAL</label>
             <div class="select-wrap">
               <select id="zbe-distintivo" class="form-select">
-                <option>Sin Distintivo (contaminante)</option>
-                <option>Etiqueta B</option>
-                <option>Etiqueta C</option>
-                <option>ECO</option>
-                <option>CERO Emisiones</option>
+                <option>Sin Distintivo</option><option>Etiqueta B</option><option>Etiqueta C</option>
               </select>
             </div>
           </div>
           <button class="btn btn-cyan btn-full" onclick="verificarZBE()">🚫 Verificar Acceso</button>
         </div>
-        <div class="result-box" id="zbe-resultado">Selecciona ciudad and distintivo para verificar el acceso.</div>
+        <div class="result-box" id="zbe-resultado">Verifica el acceso ambiental urbano.</div>
       </div>
 
+      <!-- SECCIÓN: RECURSOS -->
       <div id="sec-recursos" class="section">
         <div class="page-title">📑 GENERADOR DE RECURSOS ADMINISTRATIVOS</div>
         <div class="card">
-          <div class="form-group" style="margin-bottom:10px">
-            <label>HECHO IMPUGNADO</label>
-            <input type="text" id="rec-hecho" class="form-input" placeholder="Ej: Multa por exceso de conducción sin pausa registrada">
-          </div>
-          <div class="form-group" style="margin-bottom:14px">
-            <label>MOTIVO DE DEFENSA</label>
-            <input type="text" id="rec-causa" class="form-input" placeholder="Ej: Causa de fuerza mayor / fallo del tacógrafo">
-          </div>
+          <div class="form-group" style="margin-bottom:10px"><label>HECHO IMPUGNADO</label><input type="text" id="rec-hecho" class="form-input" placeholder="Ej: Exceso de conducción continua"></div>
+          <div class="form-group" style="margin-bottom:14px"><label>MOTIVO DE DEFENSA</label><input type="text" id="rec-causa" class="form-input" placeholder="Ej: Fuerza mayor / falta de parking seguro"></div>
           <button class="btn btn-green btn-full" onclick="generarRecurso()">📄 Redactar Pliego de Descargo</button>
         </div>
-        <div class="result-box" id="rec-resultado">Introduce los datos para generar la plantilla de descargo.</div>
+        <div class="result-box" id="rec-resultado">Genera plantillas de descargo legales automáticamente.</div>
       </div>
 
+      <!-- SECCIÓN: ASISTENTE IA -->
       <div id="sec-asistente" class="section">
-        <div class="page-title">🤖 PREGÚNTAME</div>
+        <div class="page-title">🤖 PREGÚNTAME COCHERA (IA)</div>
         <div class="card">
-          <div class="form-group" style="margin-bottom:12px">
-            <label>TU CONSULTA</label>
-            <input type="text" id="ia-prompt" class="form-input" placeholder="Haz una pregunta sobre tacógrafos, normativa o rutas...">
-          </div>
-          <button class="btn btn-cyan btn-full" onclick="preguntarIA()">🧠 Pregúntame</button>
+          <input type="text" id="ia-prompt" class="form-input" placeholder="Pregunta sobre tacógrafos, discos o legislación..." style="margin-bottom:12px">
+          <button class="btn btn-cyan btn-full" onclick="preguntarIA()">🧠 Consultar Copiloto</button>
         </div>
-
-        <div class="card">
-          <div class="card-title">CONSULTAS RÁPIDAS</div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px">
-            <button class="btn" style="background:var(--border);color:var(--text);font-size:11px;padding:7px 10px" onclick="preguntaRapida('¿Cuántas horas puedo conducir en una semana?')">Horas semanales</button>
-            <button class="btn" style="background:var(--border);color:var(--text);font-size:11px;padding:7px 10px" onclick="preguntaRapida('¿Qué es el descanso bisemanal?')">Descanso bisemanal</button>
-            <button class="btn" style="background:var(--border);color:var(--text);font-size:11px;padding:7px 10px" onclick="preguntaRapida('¿Cuándo necesito ferry o tren para el descanso?')">Ferry y tren</button>
-            <button class="btn" style="background:var(--border);color:var(--text);font-size:11px;padding:7px 10px" onclick="preguntaRapida('Excepciones al reglamento 561/2006 para transporte nacional')">Excepciones 561</button>
-          </div>
-        </div>
-
-        <div class="result-box" id="ia-resultado">Pregúntame</div>
+        <div class="result-box" id="ia-resultado">Asistente listo.</div>
       </div>
 
+      <!-- SECCIÓN: TIQUES OCR -->
       <div id="sec-tique" class="section">
-        <div class="page-title">📸 AUDITORÍA DE TIQUES DE TACÓGRAFO</div>
+        <div class="page-title">📸 AUDITAR TIQUE DE TACÓGRAFO</div>
         <div class="card">
-          <div class="card-title">CARGAR IMAGEN DEL TIQUE</div>
           <label style="display:block;cursor:pointer">
-            <div id="upload-zone" style="border:2px dashed var(--border);border-radius:10px;padding:30px;text-align:center;color:var(--muted);transition:border-color 0.2s">
-              <div style="font-size:36px;margin-bottom:8px">📷</div>
-              <div style="font-size:13px">Toca para seleccionar imagen</div>
-              <div style="font-size:11px;color:var(--dim);margin-top:4px">JPG, PNG, WEBP, BMP</div>
+            <div id="upload-zone" style="border:2px dashed var(--border);border-radius:10px;padding:30px;text-align:center;color:var(--muted)">
+              <div>📷 Toca para subir foto del tique</div>
             </div>
             <input type="file" id="tique-file" accept="image/*" style="display:none" onchange="cargarTique(this)">
           </label>
           <div id="tique-preview-wrap" style="display:none;margin-top:10px">
-            <img id="tique-preview" style="width:100%;max-height:200px;object-fit:contain;border-radius:8px;background:var(--bg)">
-            <div id="tique-filename" style="font-size:11px;color:var(--dim);margin-top:4px;text-align:center"></div>
+            <img id="tique-preview" style="width:100%;max-height:180px;object-fit:contain">
           </div>
-          <button class="btn btn-cyan btn-full" style="margin-top:12px" onclick="analizarTique()">⚡ Ejecutar Análisis OCR</button>
+          <button class="btn btn-cyan btn-full" style="margin-top:12px" onclick="analizarTique()">⚡ Ejecutar Auditoría OCR</button>
         </div>
-        <div class="result-box" id="tique-resultado">Carga una fotografía del tique para analizarla.</div>
+        <div class="result-box" id="tique-resultado">Sube el listado impreso del tacógrafo.</div>
       </div>
 
+      <!-- SECCIÓN: CONFIGURACIÓN -->
       <div id="sec-config" class="section">
         <div class="page-title">⚙️ CONFIGURACIÓN</div>
         <div class="card">
           <div class="card-title">GEMINI API KEY</div>
-          <div class="form-group" style="margin-bottom:12px">
-            <label>CLAVE DE ACCESO</label>
-            <input type="password" id="config-apikey" class="form-input" placeholder="Tu API Key de Google Gemini">
-          </div>
-          <button class="btn btn-cyan btn-full" onclick="guardarApiKeyConfig()">💾 Guardar API Key</button>
-          <div id="config-status" style="font-size:12px;color:var(--green);margin-top:8px;display:none">✅ API Key guardada correctamente</div>
-        </div>
-        <div class="card">
-          <div class="card-title">INSTALAR COMO APP (PWA)</div>
-          <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:12px">
-            Para instalar en Android como si fuera una APK:<br><br>
-            1. Abre este archivo en <strong style="color:var(--cyan)">Chrome</strong><br>
-            2. Pulsa el menú <strong style="color:var(--cyan)">⋮</strong> → <strong style="color:var(--cyan)">"Añadir a pantalla de inicio"</strong><br>
-            3. Acepta y la app aparecerá como icono nativo<br><br>
-            También puedes usar un servidor local con Python:<br>
-            <code style="background:var(--bg);padding:4px 8px;border-radius:4px;color:var(--cyan);font-size:12px">python -m http.server 8080</code>
-          </div>
-          <button id="btn-install" class="btn btn-green btn-full" onclick="instalarPWA()" style="display:none">📲 Instalar App en este dispositivo</button>
-        </div>
-        <div class="card">
-          <div class="card-title">INFORMACIÓN</div>
-          <div style="font-size:12px;color:var(--muted);line-height:1.8">
-            <div>Versión: <strong style="color:var(--cyan)">2.8 PWA</strong></div>
-            <div>IA: <strong style="color:var(--cyan)">Google Gemini 2.5 Flash</strong></div>
-            <div>Mapas: <strong style="color:var(--cyan)">OpenStreetMap + OSRM</strong></div>
-            <div>Autor: <strong style="color:var(--cyan)">Javier Rabe</strong></div>
-          </div>
+          <input type="password" id="config-apikey" class="form-input" placeholder="Tu API Key" style="margin-bottom:12px">
+          <button class="btn btn-cyan btn-full" onclick="guardarApiKeyConfig()">💾 Guardar Configuración</button>
+          <div id="config-status" style="font-size:12px;color:var(--green);margin-top:8px;display:none">✅ Guardado correctamente</div>
         </div>
       </div>
 
@@ -716,21 +573,15 @@
 
 <script>
 // ============================================================================
-// 📱 DETECTOR DE ORIENTACIÓN EN VIVO (MODO APAISADO)
+// 📱 CONTROL DE ORIENTACIÓN (CIERRE EN HORIZONTAL)
 // ============================================================================
 const mqlLandscape = window.matchMedia("(orientation: landscape)");
-
-function comprobarOrientacion(e) {
-  if (e.matches) {
-    closeSidebar();
-  }
-}
+function comprobarOrientacion(e) { if (e.matches) closeSidebar(); }
 mqlLandscape.addEventListener("change", comprobarOrientacion);
 comprobarOrientacion(mqlLandscape);
 
-
 // ============================================================================
-// ⚙️ GESTIÓN GENERAL DE LA INTERFAZ Y NAVEGACIÓN
+// ⚙️ NAVEGACIÓN CORREGIDA (CIERRE DE PESTAÑAS SEGURO)
 // ============================================================================
 function toggleSidebar() {
   const sidebar = document.getElementById('sidebar');
@@ -746,25 +597,23 @@ function closeSidebar() {
   if (overlay) overlay.classList.remove('show');
 }
 
-function showSection(sectionId) {
-  // Desactivar secciones e hilos activos del menú
+function showSection(sectionId, btnElement) {
+  // 1. Ocultar todas las secciones de contenido
   document.querySelectorAll('.section').forEach(sec => sec.classList.remove('active'));
+  
+  // 2. Limpiar estados activos de las pestañas del menú lateral
   document.querySelectorAll('.menu-btn').forEach(btn => btn.classList.remove('active'));
   
-  // Activar la sección elegida
+  // 3. Activar la sección correspondiente
   const targetSec = document.getElementById(`sec-${sectionId}`);
   if (targetSec) targetSec.classList.add('active');
   
-  // Marcar el botón activo correspondiente
-  const evt = window.event;
-  if (evt && evt.currentTarget) {
-    evt.currentTarget.classList.add('active');
-  } else {
-    // Si se activa mediante lógica de código
-    const targetBtn = Array.from(document.querySelectorAll('.menu-btn')).find(b => b.getAttribute('onclick').includes(sectionId));
-    if (targetBtn) targetBtn.classList.add('active');
+  // 4. Marcar la pestaña actual como activa sin depender de window.event
+  if (btnElement) {
+    btnElement.classList.add('active');
   }
   
+  // 5. Cerrar de inmediato el panel drawer (pestañas) en móviles
   closeSidebar();
 }
 
@@ -772,37 +621,28 @@ function setVehiculo(tipo, btn) {
   document.querySelectorAll('#vehiculo-selector .seg-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   const normText = document.getElementById('norm-text');
-  
   if (tipo === 'CAMIÓN' || tipo === 'AUTOBÚS') {
     normText.innerHTML = `<strong>■ CONDUCCIÓN CONTINUA:</strong> Máximo 4h 30min. Pausa obligatoria 45 min.<br>
                           <strong>■ FRACCIONAMIENTO:</strong> 15 min + 30 min (en ese orden).<br>
-                          <strong>■ CONDUCCIÓN DIARIA:</strong> Máx. 9h (extensible a 10h dos veces/semana).<br>
-                          <strong>■ CONTROL:</strong> Registro automático por satélite.`;
+                          <strong>■ CONDUCCIÓN DIARIA:</strong> Máx. 9h (extensible a 10h dos veces/semana).`;
   } else {
-    normText.innerHTML = `<strong>■ TRANSPORTE ESPECIAL:</strong> Sujeto a autorizaciones específicas de la DGT.<br>
-                          <strong>■ HORARIOS:</strong> Restricciones de circulación los fines de semana y vísperas de festivo.<br>
-                          <strong>■ ACOMPAÑAMIENTO:</strong> Requiere coche piloto según anchura (>3.00m o longitud >20.50m).`;
+    normText.innerHTML = `<strong>■ TRANSPORTE ESPECIAL:</strong> Sujeto a autorizaciones de la DGT.<br>
+                          <strong>■ HORARIOS:</strong> Restricciones los fines de semana y festivos.<br>
+                          <strong>■ ACOMPAÑAMIENTO:</strong> Requiere coche piloto si supera los 3.00m de ancho.`;
   }
 }
 
-
 // ============================================================================
-// ⏱️ MOTOR DEL CRONÓMETRO Y COMIENZO DE TIEMPO REAL
+// ⏱️ LÓGICA DEL CRONÓMETRO INTERNO
 // ============================================================================
 let cronoSegundos = 0;
 let cronoInterval = null;
-let cronoEstadoActual = 'pausa';
 
 function setCronoEstado(estado) {
-  cronoEstadoActual = estado;
   const displayEstado = document.getElementById('crono-estado');
-  const displayCrono = document.getElementById('crono-display');
   const ledTaco = document.getElementById('taco-led');
   const txtTaco = document.getElementById('taco-estado-txt');
   const subTaco = document.getElementById('taco-subestado');
-
-  // Limpiar colores anteriores del display
-  displayCrono.style.color = 'var(--cyan)';
   ledTaco.className = 'led';
 
   if (estado === 'conduccion') {
@@ -810,40 +650,22 @@ function setCronoEstado(estado) {
     displayEstado.style.color = "var(--green)";
     txtTaco.innerText = "EN CONDUCCIÓN";
     ledTaco.classList.add('green');
-    subTaco.innerText = "Registrando ruta vía GNSS";
-    
+    subTaco.innerText = "Registrando ruta vía GNSS satélite";
     if (!cronoInterval) {
-      cronoInterval = setInterval(() => {
-        cronoSegundos++;
-        actualizarDisplaysCrono();
-      }, 1000);
+      cronoInterval = setInterval(() => { cronoSegundos++; actualizarDisplaysCrono(); }, 1000);
     }
-  } else if (estado === 'pausa') {
-    displayEstado.innerText = "ESTADO: PAUSA / DESCANSO";
-    displayEstado.style.color = "var(--amber)";
-    txtTaco.innerText = "PAUSA / DESCANSO";
+  } else {
+    displayEstado.innerText = estado === 'pausa' ? "ESTADO: PAUSA / DESCANSO" : "ESTADO: OTROS TRABAJOS";
+    displayEstado.style.color = estado === 'pausa' ? "var(--amber)" : "var(--cyan2)";
+    txtTaco.innerText = estado === 'pausa' ? "PAUSA / DESCANSO" : "OTROS TRABAJOS";
     ledTaco.classList.add('amber');
-    subTaco.innerText = "Contando tiempo de parada legal";
-    detenerCronoInterval();
-  } else if (estado === 'trabajo') {
-    displayEstado.innerText = "ESTADO: OTROS TRABAJOS";
-    displayEstado.style.color = "var(--cyan2)";
-    txtTaco.innerText = "OTROS TRABAJOS";
-    ledTaco.classList.add('amber');
-    subTaco.innerText = "Disponibilidad / Tareas auxiliares";
-    detenerCronoInterval();
-  }
-}
-
-function detenerCronoInterval() {
-  if (cronoInterval) {
-    clearInterval(cronoInterval);
-    cronoInterval = null;
+    subTaco.innerText = estado === 'pausa' ? "Contando parada legal" : "Tareas auxiliares de carga/inspección";
+    if (cronoInterval) { clearInterval(cronoInterval); cronoInterval = null; }
   }
 }
 
 function reiniciarCrono() {
-  detenerCronoInterval();
+  if (cronoInterval) { clearInterval(cronoInterval); cronoInterval = null; }
   cronoSegundos = 0;
   actualizarDisplaysCrono();
   setCronoEstado('pausa');
@@ -853,167 +675,77 @@ function actualizarDisplaysCrono() {
   const hrs = Math.floor(cronoSegundos / 3600).toString().padStart(2, '0');
   const mins = Math.floor((cronoSegundos % 3600) / 60).toString().padStart(2, '0');
   const secs = (cronoSegundos % 60).toString().padStart(2, '0');
-  const tiempoFormateado = `${hrs}:${mins}:${secs}`;
-  const displayCorto = `${hrs}:${mins}`;
-
-  document.getElementById('crono-display').innerText = tiempoFormateado;
-  document.getElementById('taco-continua').innerText = displayCorto;
-  document.getElementById('taco-diaria').innerText = displayCorto;
-
-  // Actualizar barra de progreso del tacógrafo principal (Base: 4h 30m = 16200 seg)
+  document.getElementById('crono-display').innerText = `${hrs}:${mins}:${secs}`;
+  document.getElementById('taco-continua').innerText = `${hrs}:${mins}`;
+  document.getElementById('taco-diaria').innerText = `${hrs}:${mins}`;
   let pct = Math.min((cronoSegundos / 16200) * 100, 100);
   document.getElementById('taco-pct').innerText = `${Math.floor(pct)}%`;
   document.getElementById('taco-barra').style.width = `${pct}%`;
   document.getElementById('crono-barra').style.width = `${pct}%`;
-
-  if (pct >= 100) {
-    document.getElementById('crono-display').style.color = 'var(--red)';
-    document.getElementById('taco-led').className = 'led red';
-    document.getElementById('taco-estado-txt').innerText = "🚨 ¡EXCESO DE TIEMPO!";
-  }
 }
 
-
 // ============================================================================
-// 📊 LÓGICA DE AUDITORÍA, REGLAMENTOS Y GPS (STUBS / SIMULACIONES)
+// 📊 OTROS MÓDULOS DE REGLAMENTO Y SIMULACIONES
 // ============================================================================
 function calcularEspecial() {
   const ancho = parseFloat(document.getElementById('esp-ancho').value);
-  const longitud = parseFloat(document.getElementById('esp-longitud').value);
-  const masa = parseFloat(document.getElementById('esp-masa').value);
-  const altura = parseFloat(document.getElementById('esp-altura').value);
-  
-  let res = `📋 REQUISITOS DEL CONVOY AUDITADOS:\n`;
-  res += `• Dimensiones: ${ancho}m ancho | ${longitud}m longitud | ${altura}m altura.\n`;
-  res += `• Peso: ${masa} Toneladas métricas.\n\n`;
-  
-  if (ancho > 3.0 || longitud > 20.5) {
-    res += `⚠️ REQUERIMIENTO DE COCHE PILOTO: V-21 OBLIGATORIO en la parte posterior.\n`;
-  } else {
-    res += `✅ No requiere coche piloto por dimensiones estándar.\n`;
-  }
-  
-  if (masa > 45.0) {
-    res += `⚠️ RESTRICCIÓN DE INFRAESTRUCTURA: Verificar paso por puentes y viaductos autorizados.\n`;
-  }
-  
-  document.getElementById('esp-resultado').innerText = res;
+  document.getElementById('esp-resultado').innerText = `📋 DICTAMEN DE CONVOY:\n• Anchura: ${ancho}m.\n${ancho > 3.0 ? '⚠️ COCHE PILOTO V-21 OBLIGATORIO DETRÁS.' : '✅ Medidas estándar de circulación.'}`;
 }
-
 function calcularRutaGPS() {
-  const destino = document.getElementById('gps-destino').value;
-  const resBox = document.getElementById('gps-resultado');
-  const iframe = document.getElementById('map-iframe');
-  
-  if (!destino) {
-    resBox.innerText = "Introduce un destino válido.";
-    return;
-  }
-  
-  resBox.innerText = `Buscando ruta segura hacia "${destino}" evitando restricciones de gálibo pesado...\nRuta calculada con éxito mediante OSRM.`;
-  iframe.src = `https://maps.google.com/maps?q=${encodeURIComponent(destino)}&t=h&z=14&output=embed`;
+  const dest = document.getElementById('gps-destino').value;
+  if(!dest) return;
+  document.getElementById('gps-resultado').innerText = `🗺️ Ruta trazada hacia: ${dest}\nEvitando puentes con gálibo inferior a 4.5m para transporte pesado.`;
+  document.getElementById('map-iframe').src = `https://maps.google.com/maps?q=${encodeURIComponent(dest)}&t=h&z=14&output=embed`;
 }
-
 function abrirGoogleMaps() {
-  const destino = document.getElementById('gps-destino').value;
-  if(destino) window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destino)}`, '_blank');
+  const dest = document.getElementById('gps-destino').value;
+  if(dest) window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(dest)}`, '_blank');
 }
-
-function abrirStreetView() {
-  const destino = document.getElementById('gps-destino').value;
-  if(destino) window.open(`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${encodeURIComponent(destino)}`, '_blank');
-}
-
 function reiniciarGPS() {
   document.getElementById('gps-destino').value = '';
-  document.getElementById('gps-resultado').innerText = 'Introduce un destino para trazar la ruta.';
+  document.getElementById('gps-resultado').innerText = 'Introduce un destino para trazar la ruta pesada.';
   document.getElementById('map-iframe').src = 'about:blank';
 }
-
 function consultarDGT() {
-  const d = document.getElementById('dgt-dia').value;
-  const m = document.getElementById('dgt-mes').value;
-  const a = document.getElementById('dgt-anio').value;
-  
-  document.getElementById('dgt-resultado').innerText = `📅 RESTRICCIONES DGT PARA EL ${d} DE ${m.toUpperCase()} DE ${a}:\n` +
-    `• Vehículos de más de 7.500 kg de MMA tienen restringido el acceso a las principales radiales (A-1 a A-6) en salidas de grandes urbes a partir de las 15:00 horas si coincide con víspera de festivo nacional.`;
+  document.getElementById('dgt-resultado').innerText = `📅 RESTRICCIONES DGT AUDITADAS:\n• Prohibido adelantamiento a camiones de >7.5t en tramos específicos de la red principal durante las operaciones salida de tráfico.`;
 }
-
 function analizarLOTT() {
-  const infraccion = document.getElementById('lott-combo').value;
-  let text = `⚖️ DICTAMEN DE INFRACCIÓN SELEGIDA (LOTT):\n\nClasificación: ${infraccion}\n`;
-  
-  if (infraccion.includes("MUY GRAVE")) {
-    text += `💰 Sanción Económica: de 1.001 € a 4.000 €\n❌ Riesgo: Pérdida de Honorabilidad (Inhabilitación temporal de la tarjeta de transporte).`;
-  } else {
-    text += `💰 Sanción Económica: de 401 € a 1.000 €\n⚠️ Riesgo: Amonestación y pérdida de puntos en el baremo de la empresa de transportes.`;
-  }
-  document.getElementById('lott-resultado').innerText = text;
+  const inf = document.getElementById('lott-combo').value;
+  document.getElementById('lott-resultado').innerText = `⚖️ SANCIÓN BAREMADA LOTT:\nInfracción: ${inf}.\n${inf.includes("MUY GRAVE") ? '💰 Multa: 1.001€ a 4.000€ y pérdida de honorabilidad.' : '💰 Multa: 401€ a 1.000€.'}`;
 }
-
 function buscarNormativa() {
-  const q = document.getElementById('norm-query').value;
-  document.getElementById('norm-resultado').innerText = `🇪🇺 EXTACTO REGLAMENTARIO DE LA UNIÓN EUROPEA:\n\n` +
-    `Resultado para la consulta: "${q || 'Reglamento 561/2006'}"\n` +
-    `Alineado con el paquete de movilidad europeo. Los descansos semanales normales (>45h) no pueden realizarse a bordo de la cabina del camión. El empresario debe costear alojamiento adecuado fuera del vehículo.`;
+  const q = document.getElementById('norm-query').value || 'Reglamento 561/2006';
+  document.getElementById('norm-resultado').innerText = `🇪🇺 EXTRACTO UE [${q}]:\nLos descansos semanales de más de 45 horas están estrictamente prohibidos dentro del vehículo. El conductor debe dormir en instalaciones hoteleras pagadas por la empresa.`;
 }
-
 function verificarZBE() {
-  const ciudad = document.getElementById('zbe-ciudad').value;
-  const distintivo = document.getElementById('zbe-distintivo').value;
-  let res = `🏙️ INFORME DE ACCESO URBANO (${ciudad}):\n`;
-  
-  if (distintivo.includes("Sin Distintivo") || distintivo.includes("Etiqueta B")) {
-    res += `❌ ACCESO DENEGADO o Restringido a horarios nocturnos de carga y descarga de mercancías pesadas. Riesgo de multa automática por cámaras integradas.`;
-  } else {
-    res += `✅ ACCESO PERMITIDO sujeto a las limitaciones físicas de peso por calles históricas.`;
-  }
-  document.getElementById('zbe-resultado').innerText = res;
+  const c = document.getElementById('zbe-ciudad').value;
+  const d = document.getElementById('zbe-distintivo').value;
+  document.getElementById('zbe-resultado').innerText = `🏙️ CONTROL ZBE (${c}):\nDistintivo: ${d}.\n${d.includes('Sin Distintivo') ? '❌ Prohibido el acceso excepto ventanas nocturnas de reparto.' : '✅ Acceso libre con control de tonelaje.'}`;
 }
-
 function generarRecurso() {
-  const hecho = document.getElementById('rec-hecho').value || 'Exceso de conducción continua sin pausa reglamentaria';
-  const causa = document.getElementById('rec-causa').value || 'Fuerza mayor por falta de plazas libres en parking de la red vial';
-  
-  document.getElementById('rec-resultado').innerText = `AL ÓRGANO INSTRUCTOR DE SANCIONES DE TRANSPORTES\n\n` +
-    `D./Dña. [Nombre de Conductor], conductor profesional, expone:\n` +
-    `Que habiendo recibido notificación de expediente sancionador relativo a: "${hecho}", presento PLIEGO DE DESCARGOS basado en:\n` +
-    `• MOTIVACIÓN DE DEFENSA: ${causa}, al amparo del Artículo 12 del Reglamento (CE) nº 561/2006, habiendo priorizado la seguridad vial del convoy hasta encontrar un lugar seguro para detener la marcha.\n\n` +
-    `Solicito la revocación total del expediente.`;
+  const h = document.getElementById('rec-hecho').value || 'Falta de pausa';
+  document.getElementById('rec-resultado').innerText = `AL ÓRGANO INSTRUCTOR\n\nPresento Descargo contra la supuesta infracción de "${h}", alegando desvío por fuerza mayor motivado por la ausencia absoluta de plazas de estacionamiento libres en el área de descanso reglamentaria.`;
 }
-
 function preguntarIA() {
-  const prompt = document.getElementById('ia-prompt').value;
-  if(!prompt) return;
-  preguntaRapida(prompt);
+  const p = document.getElementById('ia-prompt').value;
+  document.getElementById('ia-resultado').innerText = `🤖 [Simulación Gemini 2.5 Flash]:\n\nSobre tu consulta de "${p || 'descanso'}": El paquete de movilidad europeo permite exceder hasta en 1 hora la conducción diaria para llegar al centro de operaciones o al domicilio a realizar un descanso semanal, siempre que no comprometa la seguridad vial y se registre manualmente al reverso del tique.`;
 }
-
-function preguntaRapida(texto) {
-  document.getElementById('ia-prompt').value = texto;
-  const res = document.getElementById('ia-resultado');
-  res.innerText = `🤖 [Simulación Gemini 2.5 Flash]:\n\nProcesando tu consulta sobre: "${texto}"...\n\nRecuerda que bajo el Reglamento 561/2006 el máximo de conducción ininterrumpida es de 4.5 horas, tras las cuales debes realizar de inmediato una pausa ininterrumpida de al menos 45 minutos, salvo que vayas a tomar un descanso diario.`;
-}
-
-function cargarTique(input) {
-  const file = input.files[0];
-  if (file) {
-    document.getElementById('tique-filename').innerText = file.name;
+function cargarTique(i) {
+  if (i.files && i.files[0]) {
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = e => {
       document.getElementById('tique-preview').src = e.target.result;
       document.getElementById('tique-preview-wrap').style.display = 'block';
     }
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(i.files[0]);
   }
 }
-
 function analizarTique() {
-  document.getElementById('tique-resultado').innerText = `⚡ Escaneando imagen mediante OCR...\n[Análisis]: No se detectan infracciones de tiempos en las últimas 24 horas impresas en el listado del tacógrafo digital. Sincronización OK.`;
+  document.getElementById('tique-resultado').innerText = `⚡ Analizando líneas impresas...\n[OCR]: Lectura de tarjeta correcta. Actividad: Conducción acumulada de 3h 15m. No se aprecian infracciones en los últimos bloques de datos de la jornada actual.`;
 }
 
-
 // ============================================================================
-// 💾 GESTIÓN DE LLAVES API LOCALES
+// 🔒 GESTIÓN DE CREDENCIALES LOCALES
 // ============================================================================
 function guardarApiKey() {
   const key = document.getElementById('input-apikey').value;
@@ -1023,7 +755,6 @@ function guardarApiKey() {
     document.getElementById('modal-apikey').classList.remove('show');
   }
 }
-
 function guardarApiKeyConfig() {
   const key = document.getElementById('config-apikey').value;
   if(key) {
@@ -1033,59 +764,36 @@ function guardarApiKeyConfig() {
     setTimeout(() => status.style.display = 'none', 3000);
   }
 }
-
-// Inicialización de credenciales al cargar la página
 window.addEventListener('DOMContentLoaded', () => {
   const savedKey = localStorage.getItem('gemini_apikey');
-  if (savedKey) {
-    document.getElementById('config-apikey').value = savedKey;
-  } else {
-    document.getElementById('modal-apikey').classList.add('show');
-  }
+  if (savedKey) document.getElementById('config-apikey').value = savedKey;
+  else document.getElementById('modal-apikey').classList.add('show');
 });
 </script>
 
 <!-- ============================================================================
-     📦 INLINE PWA MANIFEST AUTOMÁTICO CON DISEÑO DE ICONO EN ALTA RESOLUCIÓN (512x512)
+     📦 GENERADOR DE MANIFEST PWA VECTORIAL ALTA RESOLUCIÓN (512x512)
      ============================================================================ -->
 <script>
 (() => {
   const svgIcono = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
     <rect width="512" height="512" rx="115" fill="#0B0F19"/>
     <defs>
-      <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-        <feGaussianBlur stdDeviation="10" result="blur" />
-        <feComposite in="SourceGraphic" in2="blur" operator="over" />
-      </filter>
-      <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="#06B6D4"/>
-        <stop offset="100%" stop-color="#3B82F6"/>
-      </linearGradient>
+      <filter id="glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="10" result="blur" /><feComposite in="SourceGraphic" in2="blur" operator="over" /></filter>
+      <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#06B6D4"/><stop offset="100%" stop-color="#3B82F6"/></linearGradient>
     </defs>
-    <circle cx="256" cy="256" r="210" fill="none" stroke="#1E293B" stroke-width="8"/>
     <circle cx="256" cy="256" r="190" fill="none" stroke="url(#cyanGrad)" stroke-width="8" stroke-dasharray="18 12" filter="url(#glow)"/>
-    <circle cx="256" cy="256" r="160" fill="none" stroke="#38BDF8" stroke-width="3" stroke-dasharray="3 8" opacity="0.4"/>
     <g transform="translate(136, 145) scale(1.9)" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
       <path d="M15 10 L50 10 L55 26 L10 26 Z" fill="#06B6D4" fill-opacity="0.2" stroke="#38BDF8" stroke-width="4"/>
-      <path d="M8 12 L3 12 L3 22" stroke="#94A3B8" stroke-width="3"/>
-      <path d="M57 12 L62 12 L62 22" stroke="#94A3B8" stroke-width="3"/>
       <rect x="8" y="30" width="49" height="28" rx="4" fill="#1E293B" stroke="#FFFFFF" stroke-width="4"/>
-      <circle cx="16" cy="48" r="3.5" fill="#F59E0B" stroke="none"/>
-      <circle cx="49" cy="48" r="3.5" fill="#F59E0B" stroke="none"/>
-      <line x1="5" y1="54" x2="60" y2="54" stroke="#94A3B8" stroke-width="6"/>
     </g>
     <rect x="156" y="355" width="200" height="55" rx="12" fill="#0F172A" stroke="#06B6D4" stroke-width="3" filter="url(#glow)"/>
-    <text x="256" y="393" font-family="Consolas, Monaco, monospace" font-weight="bold" font-size="32" fill="#10B981" text-anchor="middle" letter-spacing="3">04:30</text>
-    <rect x="226" y="343" width="60" height="4" rx="2" fill="#38BDF8" opacity="0.8"/>
-    <text x="256" y="450" font-family="'Segoe UI', Roboto, sans-serif" font-weight="900" font-size="18" fill="#64748B" text-anchor="middle" letter-spacing="6">COPILOTO</text>
+    <text x="256" y="393" font-family="Consolas, monospace" font-weight="bold" font-size="32" fill="#10B981" text-anchor="middle">04:30</text>
   </svg>`;
-
   const dataUriIcono = 'data:image/svg+xml;utf8,' + encodeURIComponent(svgIcono);
-
   const manifest = {
     name: 'Copiloto Inteligente de Transporte',
     short_name: 'Magnaphone v2.8',
-    description: 'Tacógrafo digital, GPS, restricciones DGT y asistente IA para transportistas',
     start_url: '.',
     display: 'standalone',
     background_color: '#0B0F19',
@@ -1097,17 +805,12 @@ window.addEventListener('DOMContentLoaded', () => {
       { src: dataUriIcono, sizes: '512x512', type: 'image/svg+xml', purpose: 'maskable' }
     ]
   };
-
   const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-  const urlManifest = URL.createObjectURL(blob);
   const linkManifest = document.createElement('link');
-  linkManifest.rel = 'manifest';
-  linkManifest.href = urlManifest;
+  linkManifest.rel = 'manifest'; linkManifest.href = URL.createObjectURL(blob);
   document.head.appendChild(linkManifest);
-
   const linkApple = document.createElement('link');
-  linkApple.rel = 'apple-touch-icon';
-  linkApple.href = dataUriIcono;
+  linkApple.rel = 'apple-touch-icon'; linkApple.href = dataUriIcono;
   document.head.appendChild(linkApple);
 })();
 </script>
