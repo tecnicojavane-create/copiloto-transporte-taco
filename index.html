@@ -6,14 +6,12 @@
     <title>Copiloto PWA</title>
     <meta name="theme-color" content="#1e1e2f">
     
-    <!-- Configuración PWA -->
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="icon.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-canvas">
 
-    <!-- Leaflet CSS para el Mapa Móvil -->
-    <link rel="stylesheet" href="https://unpkg.com" crossorigin="" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -27,14 +25,12 @@
             overflow: hidden;
         }
         
-        /* Contenedor del Mapa */
         #map { 
             flex: 1; 
             width: 100%; 
             z-index: 1;
         }
 
-        /* Panel de datos superpuesto */
         .dashboard { 
             background: rgba(30, 30, 36, 0.95); 
             padding: 15px; 
@@ -53,7 +49,6 @@
         
         #estado { margin: 10px 0; color: #ffbc00; font-weight: 500; font-size: 0.9rem; }
 
-        /* Botón Flotante de Voz */
         .btn-mic { 
             position: absolute; 
             bottom: 160px; 
@@ -80,19 +75,14 @@
 </head>
 <body>
 
-    <!-- Mapa de navegación de pantalla completa -->
     <div id="map"></div>
 
-    <!-- Botón flotante para interactuar con la IA de voz -->
     <button class="btn-mic" id="btn-voz">🎙️</button>
 
-    <!-- Cuadro de mandos inferior -->
-<!-- Cuadro de mandos inferior -->
     <div class="dashboard">
         <h1>Copiloto Activo</h1>
         <div id="estado">Pulsa el micrófono para hablar</div>
         
-        <!-- Botón de inicialización de seguridad para móviles modernos -->
         <button id="btn-permisos" style="background: #2ed573; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; margin-bottom: 10px; width: 100%; display: block;">
             🚀 Activar GPS y Copiloto
         </button>
@@ -103,11 +93,9 @@
         </div>
     </div>
 
-    <!-- Leaflet JS -->
-    <script src="https://unpkg.com" crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 
     <script>
-        // Registrar Service Worker
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js').catch(err => console.log("Error SW:", err));
         }
@@ -116,8 +104,9 @@
         const map = L.map('map', { zoomControl: false }).setView([40.4167, -3.7037], 15); 
         L.control.zoom({ position: 'topright' }).addTo(map);
 
-        L.tileLayer('https://{s}://{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap'
+        // URL de OpenStreetMap (CORREGIDA)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
 
         let marker = L.circleMarker([40.4167, -3.7037], {
@@ -127,23 +116,19 @@
         let primeraLectura = true;
         let watchId = null;
 
-        // Gestión Inteligente de Permisos con el botón verde
         document.getElementById('btn-permisos').addEventListener('click', async () => {
-            // 1. Forzar encendido y desbloqueo de la síntesis de voz (Requisito de iOS/Android)
             window.speechSynthesis.cancel();
             const inicioVoz = new SpeechSynthesisUtterance("Copiloto de transporte iniciado. Buen viaje.");
             inicioVoz.lang = 'es-ES';
             window.speechSynthesis.speak(inicioVoz);
 
-            // 2. Solicitar Micrófono preventivamente
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                stream.getTracks().forEach(track => track.stop()); // Apagarlo tras recibir el permiso
+                stream.getTracks().forEach(track => track.stop());
             } catch (e) {
                 alert("Para usar el asistente de voz, por favor permite el acceso al micrófono.");
             }
 
-            // 3. Activar el rastreo por GPS de alta precisión
             if ("geolocation" in navigator) {
                 if (watchId) navigator.geolocation.clearWatch(watchId);
                 
@@ -168,12 +153,10 @@
                     document.getElementById('gps').innerText = "Sin señal GPS o permiso denegado";
                 }, { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
 
-                // Ocultar botón una vez activado con éxito
                 document.getElementById('btn-permisos').style.display = 'none';
             }
         });
 
-        // Configuración del botón del micrófono flotante
         const btnVoz = document.getElementById('btn-voz');
         const estado = document.getElementById('estado');
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -193,8 +176,9 @@
                 if (navigator.vibrate) navigator.vibrate(40);
             };
 
+            // Captura de texto por voz (CORREGIDO)
             recognition.onresult = (event) => {
-                const texto = event.results.transcript.toLowerCase();
+                const texto = event.results[0][0].transcript.toLowerCase();
                 estado.innerText = `Comando: "${texto}"`;
                 procesarComando(texto);
             };
@@ -229,4 +213,3 @@
     </script>
 </body>
 </html>
-    
