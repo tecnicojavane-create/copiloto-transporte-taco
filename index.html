@@ -1315,30 +1315,6 @@ function analizarTique() {
   geminiStream(prompt, 'tique-resultado', true, imagenTiqueBase64, mimeType);
 }
 </script>
-// 📱 DETECTOR DE MODO APAISADO PARA CERRAR EL MENÚ AUTOMÁTICAMENTE
-const mqlLandscape = window.matchMedia("(orientation: landscape)");
-
-function comprobarOrientacion(e) {
-  // Si entra en modo apaisado (horizontal)
-  if (e.matches) {
-    // Intentamos ejecutar tu función nativa de cierre
-    if (typeof closeSidebar === "function") {
-      closeSidebar();
-    } else {
-      // Si aún no está declarada, lo hacemos directamente por seguridad con las clases
-      const sidebar = document.getElementById("sidebar");
-      const overlay = document.getElementById("overlay");
-      if (sidebar) sidebar.classList.add("hidden");
-      if (overlay) overlay.classList.remove("show");
-    }
-  }
-}
-
-// Escuchamos el cambio de orientación en vivo
-mqlLandscape.addEventListener("change", comprobarOrientacion);
-
-// Ejecutamos una vez al cargar la app por si el dispositivo ya está en horizontal
-comprobarOrientacion(mqlLandscape);
   
 <script>
 const manifest = {
@@ -1362,6 +1338,30 @@ const link = document.createElement('link');
 link.rel = 'manifest';
 link.href = manifestUrl;
 document.head.appendChild(link);
+  // 📱 DETECTOR DE MODO APAISADO PARA CERRAR EL MENÚ AUTOMÁTICAMENTE
+const mqlLandscape = window.matchMedia("(orientation: landscape)");
+
+function comprobarOrientacion(e) {
+  // Si entra en modo apaisado (horizontal)
+  if (e.matches) {
+    // Intentamos ejecutar tu función nativa de cierre
+    if (typeof closeSidebar === "function") {
+      closeSidebar();
+    } else {
+      // Si aún no está declarada, lo hacemos directamente por seguridad con las clases
+      const sidebar = document.getElementById("sidebar");
+      const overlay = document.getElementById("overlay");
+      if (sidebar) sidebar.classList.add("hidden");
+      if (overlay) overlay.classList.remove("show");
+    }
+  }
+}
+
+// Escuchamos el cambio de orientación en vivo
+mqlLandscape.addEventListener("change", comprobarOrientacion);
+
+// Ejecutamos una vez al cargar la app por si el dispositivo ya está en horizontal
+comprobarOrientacion(mqlLandscape);
 
 // 🍏 ENLACE ESPECIAL PARA RECONOCIMIENTO DE ICONO EN IOS (SAFARI)
 const appleLink = document.createElement('link');
