@@ -274,6 +274,43 @@
     position: absolute; bottom: 10px; right: 10px;
     display: flex; flex-direction: column; gap: 6px;
   }
+  .map-fab {
+    background: var(--cyan); color: var(--bg);
+    border: none; border-radius: 50%;
+    width: 40px; height: 40px; font-size: 18px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  }
+
+  /* ── ROUTE RESULT ── */
+  .route-info {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px; margin-bottom: 14px;
+  }
+  .route-stat {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 0; border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .route-stat:last-child { border-bottom: none; }
+  .route-stat .val { color: var(--cyan); font-weight: 700; }
+
+  /* BADGE */
+  .badge {
+    display: inline-block; padding: 3px 8px; border-radius: 6px;
+    font-size: 11px; font-weight: 700; margin-left: 6px;
+  }
+  .badge-red { background: rgba(239,68,68,0.2); color: var(--red); }
+  .badge-green { background: rgba(16,185,129,0.2); color: var(--green); }
+  .badge-amber { background: rgba(245,158,11,0.2); color: var(--amber); }
+
+  /* NORMATIVA INFO BOX */
+  .norm-box {
+    background: var(--bg); border-left: 3px solid var(--cyan);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 14px; font-size: 13px; line-height: 1.7;
+    color: var(--text); margin-bottom: 14px;
+  }
 
   /* RESPONSIVE — desktop muestra sidebar fijo */
   @media (min-width: 768px) {
@@ -291,6 +328,13 @@
     content: '▌'; color: var(--cyan); animation: blink 1s step-end infinite;
   }
   @keyframes blink { 50% { opacity: 0; } }
+
+  /* GALIBO ALERT */
+  .galibo-alert {
+    background: rgba(239,68,68,0.1); border: 1px solid var(--red);
+    border-radius: 8px; padding: 10px 12px; margin-top: 8px;
+    font-size: 12px; color: var(--red);
+  }
 
   /* SCROLLBAR */
   ::-webkit-scrollbar { width: 4px; }
@@ -340,7 +384,7 @@
       <button class="menu-btn" onclick="showSection('normativa')">🇪🇺 Normativa UE</button>
       <button class="menu-btn" onclick="showSection('zbe')">🏙️ Restricciones ZBE</button>
       <button class="menu-btn" onclick="showSection('recursos')">📑 Recursos de Sanciones</button>
-      <button class="menu-btn" onclick="showSection('preguntame')">🤖 preguntame</button>
+      <button class="menu-btn" onclick="showSection('asistente')">🤖 Pregúntame</button>
       <button class="menu-btn" onclick="showSection('tique')">📸 Auditar Tique</button>
       <button class="menu-btn" onclick="showSection('config')" style="margin-top:auto">⚙️ Configuración</button>
       <div class="autor">por Javier Rabe</div>
@@ -510,9 +554,9 @@
           <div class="card-title">SELECCIONAR INFRACCIÓN</div>
           <div class="select-wrap" style="margin-bottom:12px">
             <select id="lott-combo" class="form-select">
-              <option>Exceso de tiempos de conducción (&gt;20%) - MUY GRAVE</option>
+              <option>Exceso de tiempos de conducción (>20%) - MUY GRAVE</option>
               <option>Falta de hojas de registro / datos del tacógrafo - MUY GRAVE</option>
-              <option>Minoración de descansos diarios (&gt;50%) - MUY GRAVE</option>
+              <option>Minoración de descansos diarios (>50%) - MUY GRAVE</option>
               <option>Carecer de tarjeta de tacógrafo en cabina - MUY GRAVE</option>
               <option>Exceso de peso entre 15% y 25% - GRAVE</option>
               <option>No pasar inspección periódica del tacógrafo - GRAVE</option>
@@ -569,7 +613,7 @@
           </div>
           <button class="btn btn-cyan btn-full" onclick="verificarZBE()">🚫 Verificar Acceso</button>
         </div>
-        <div class="result-box" id="zbe-resultado">Selecciona ciudad y distintivo para verificar el acceso.</div>
+        <div class="result-box" id="zbe-resultado">Selecciona ciudad and distintivo para verificar el acceso.</div>
       </div>
 
       <div id="sec-recursos" class="section">
@@ -589,13 +633,13 @@
       </div>
 
       <div id="sec-asistente" class="section">
-        <div class="page-title">🤖 ASISTENTE LOGÍSTICO GEMINI</div>
+        <div class="page-title">🤖 PREGÚNTAME</div>
         <div class="card">
           <div class="form-group" style="margin-bottom:12px">
             <label>TU CONSULTA</label>
             <input type="text" id="ia-prompt" class="form-input" placeholder="Haz una pregunta sobre tacógrafos, normativa o rutas...">
           </div>
-          <button class="btn btn-cyan btn-full" onclick="preguntarIA()">🧠 Preguntar al Asistente</button>
+          <button class="btn btn-cyan btn-full" onclick="preguntarIA()">🧠 Pregúntame</button>
         </div>
 
         <div class="card">
@@ -608,7 +652,7 @@
           </div>
         </div>
 
-        <div class="result-box" id="ia-resultado">Escribe tu consulta o usa las preguntas rápidas.</div>
+        <div class="result-box" id="ia-resultado">Pregúntame</div>
       </div>
 
       <div id="sec-tique" class="section">
@@ -691,6 +735,7 @@ let deferredPrompt = null;
 // INIT
 // ============================================================
 window.addEventListener('load', () => {
+  // Fecha actual en DGT
   const now = new Date();
   document.getElementById('dgt-dia').value = now.getDate();
   document.getElementById('dgt-mes').selectedIndex = now.getMonth();
@@ -702,6 +747,7 @@ window.addEventListener('load', () => {
     document.getElementById('config-apikey').value = API_KEY;
   }
 
+  // Iniciar loop del cronómetro
   setInterval(tickCrono, 1000);
   actualizarPanelTacografo();
 });
@@ -724,7 +770,7 @@ function instalarPWA() {
 }
 
 // ============================================================
-// SIDEBAR / NAV (CORREGIDO DE ENTORNO GLOBAL)
+// SIDEBAR / NAV
 // ============================================================
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
@@ -738,15 +784,9 @@ function closeSidebar() {
 }
 function showSection(id) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-  const targetSection = document.getElementById('sec-' + id);
-  if (targetSection) targetSection.classList.add('active');
-  
+  document.getElementById('sec-' + id).classList.add('active');
   document.querySelectorAll('.menu-btn').forEach(b => b.classList.remove('active'));
-  
-  // Buscar botón dinámicamente evitando fallos de scope en móviles
-  const activeBtn = document.querySelector(`button[onclick*="showSection('${id}')"]`);
-  if (activeBtn) activeBtn.classList.add('active');
-
+  event.currentTarget.classList.add('active');
   closeSidebar();
   if (id === 'tacografo') actualizarPanelTacografo();
   if (id === 'gps') iniciarMapa();
@@ -891,7 +931,7 @@ function actualizarPanelTacografo() {
     estadoTxt.style.color = 'var(--red)';
   } else if (cronoEstado === 'conduccion') {
     led.className = 'led';
-    estadoTxt.textContent = 'MÓDULO DE CONDUCCIÓN';
+    estadoTxt.textContent = 'CONDUCCIÓN';
     estadoTxt.style.color = 'var(--green)';
   } else {
     led.className = 'led amber';
@@ -945,6 +985,7 @@ function tickCrono() {
       segsConductionActual++;
       segsConductionDiaria++;
 
+      // Aviso 4h 15m
       if (segsConductionActual === 15300 && !avisoPrevio) {
         avisoPrevio = true;
         vibrar([300]);
@@ -953,6 +994,7 @@ function tickCrono() {
         document.getElementById('crono-estado').style.color = 'var(--amber)';
       }
 
+      // Límite 4h 30m
       if (segsConductionActual >= 16200 && !avisoLimite) {
         avisoLimite = true;
         vibrar([500, 200, 500, 200, 500]);
@@ -1060,7 +1102,7 @@ function calcularEspecial() {
       categoria = 'CATEGORÍA III — Autorización Excepcional (OC-EXCE)';
       escolta   = 'Coches piloto + Escolta Guardia Civil / Policía Nacional.';
       velocidad = 'MÁXIMO 45 km/h.';
-      extras = [
+      extras    = [
         'Estudio técnico de itinerario obligatorio.',
         'Autorización individual firmada DGT.',
         'Prohibida circulación nocturna.',
@@ -1090,16 +1132,16 @@ ${extrasText}
 }
 
 // ============================================================
-// 4. GPS (CORREGIDO DE ENLACES ROTOS)
+// 4. GPS
 // ============================================================
 let mapaCargado = false;
-const origenCoords = '37.162,-5.908'; // Coordenadas Los Palacios
 
 function iniciarMapa() {
   if (mapaCargado) return;
   mapaCargado = true;
+  // Usar OpenStreetMap embebido (funciona sin API key)
   const iframe = document.getElementById('map-iframe');
-  iframe.src = `https://www.openstreetmap.org/export/embed.html?bbox=-6.05%2C37.12%2C-5.85%2C37.20&layer=mapnik&marker=${origenCoords}`;
+  iframe.src = 'https://www.openstreetmap.org/export/embed.html?bbox=-6.3%2C36.8%2C-5.3%2C37.5&layer=mapnik&marker=37.162%2C-5.908';
 }
 
 function calcularRutaGPS() {
@@ -1113,25 +1155,28 @@ function calcularRutaGPS() {
     ? (parseFloat(document.getElementById('esp-altura').value) || 4.30)
     : vehiculoActual === 'CAMIÓN' ? 4.0 : 3.5;
 
-  // URL corregida a la API de navegación oficial de Google Maps
-  const url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origenCoords)}&destination=${encodeURIComponent(destino)}&travelmode=driving`;
+  // Abrir en Google Maps con parámetros de transporte
+  const origenCoords = '37.162,-5.908';
+  const url = `https://www.google.com/maps/dir/${encodeURIComponent(origenCoords)}/${encodeURIComponent(destino)}`;
   window.open(url, '_blank');
 
+  // Actualizar mapa embebido con destino
   const iframe = document.getElementById('map-iframe');
   iframe.src = `https://www.openstreetmap.org/export/embed.html?bbox=-6.5%2C36.5%2C-5.0%2C38.0&layer=mapnik`;
 
+  // Calcular info de ruta aproximada
   const velocidades = { 'CAMIÓN': 80, 'AUTOBÚS': 90, 'ESPECIAL': 50 };
   const vel = velocidades[vehiculoActual] || 80;
 
   res.textContent =
-`%\u0048% ITINERARIO PROFESIONAL [${vehiculoActual}]
+`🛣️ ITINERARIO PROFESIONAL [${vehiculoActual}]
 ${'─'.repeat(50)}
 📍 Origen:  Los Palacios y Villafranca (Sevilla)
 🏁 Destino: ${destino}
 🚗 Vel. media estimada: ${vel} km/h
 🔍 Altura vehículo: ${altura}m
 
-ℹ️ Ruta abierta de forma segura en Google Maps Navegación →
+ℹ️ Ruta abierta en Google Maps →
 
 ${vehiculoActual === 'CAMIÓN' ? '• RESTRICCIONES: Rutas de mercancías activas.\n• VEL. MÁX: 90 km/h en autovías.' :
   vehiculoActual === 'AUTOBÚS' ? '• Acceso carriles Bus-VAO y estaciones urbanas.\n• VEL. MÁX: 100 km/h en autovías.' :
@@ -1142,22 +1187,22 @@ ${vehiculoActual === 'CAMIÓN' ? '• RESTRICCIONES: Rutas de mercancías activa
 
 function abrirGoogleMaps() {
   const destino = document.getElementById('gps-destino').value.trim();
+  const base = 'https://www.google.com/maps';
   const url = destino
-    ? `https://www.google.com/maps/dir/?api=1&origin=Los+Palacios+y+Villafranca+Sevilla&destination=${encodeURIComponent(destino)}&travelmode=driving`
-    : `https://www.google.com/maps/@${origenCoords},14z`;
+    ? `${base}/dir/Los+Palacios+Sevilla/${encodeURIComponent(destino)}`
+    : `${base}/@37.162,-5.908,14z`;
   window.open(url, '_blank');
 }
 
 function abrirStreetView() {
-  const url = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${origenCoords}`;
-  window.open(url, '_blank');
+  window.open('https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=37.162,-5.908', '_blank');
 }
 
 function reiniciarGPS() {
   document.getElementById('gps-destino').value = '';
   document.getElementById('gps-resultado').textContent = 'Introduce un destino para trazar la ruta con restricciones para vehículos pesados.';
   const iframe = document.getElementById('map-iframe');
-  iframe.src = `https://www.openstreetmap.org/export/embed.html?bbox=-6.3%2C36.8%2C-5.3%2C37.5&layer=mapnik&marker=${origenCoords}`;
+  iframe.src = 'https://www.openstreetmap.org/export/embed.html?bbox=-6.3%2C36.8%2C-5.3%2C37.5&layer=mapnik&marker=37.162%2C-5.908';
 }
 
 // ============================================================
@@ -1226,7 +1271,7 @@ function generarRecurso() {
 // ============================================================
 // 10. ASISTENTE IA
 // ============================================================
-function preguntar() {
+function preguntarIA() {
   const query = document.getElementById('ia-prompt').value.trim();
   if (!query) return;
   preguntaRapida(query);
