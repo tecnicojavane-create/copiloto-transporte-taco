@@ -1,1689 +1,1352 @@
-import customtkinter as ctk
-from tkinter import filedialog
-import os
-import sys
-import threading
-import configparser
-import urllib.request
-import json
-import urllib.parse
-import webbrowser
-import math
-import requests
-import random
-from datetime import datetime, timedelta
-from PIL import Image, ImageDraw, ImageTk
-
-# Sonido solo en Windows
-try:
-    import winsound
-    WINSOUND_DISPONIBLE = True
-except ImportError:
-    WINSOUND_DISPONIBLE = False
-
-# Librerías de IA
-try:
-    from google import genai
-    from google.genai import types
-    LIBS_DISPONIBLES = True
-except ImportError:
-    LIBS_DISPONIBLES = False
-
-# Mapa
-try:
-    import tkintermapview
-    MAPA_DISPONIBLE = True
-except ImportError:
-    MAPA_DISPONIBLE = False
-
-# ==========================================
-# ESTILO VISUAL
-# ==========================================
-ctk.set_appearance_mode("Dark")
-ctk.set_default_color_theme("blue")
-
-# ==========================================
-# GESTIÓN DE API KEY PERMANENTE
-# ==========================================
-RUTA_CONFIG = os.path.join(os.path.expanduser("~"), ".copiloto_transporte.ini")
-config = configparser.ConfigParser()
-
-
-def obtener_o_pedir_api_key():
-    if os.path.exists(RUTA_CONFIG):
-        try:
-            config.read(RUTA_CONFIG)
-            key = config["CONFIGURACION"]["api_key"]
-            if key and len(key) > 10:
-                return key
-        except Exception:
-            pass
-    return pedir_key_interfaz()
-
-
-def guardar_api_key(key_usuario):
-    config["CONFIGURACION"] = {"api_key": key_usuario}
-    with open(RUTA_CONFIG, "w") as f:
-        config.write(f)
-
-
-def pedir_key_interfaz():
-    ventana_key = ctk.CTk()
-    ventana_key.title("Configuración Inicial")
-    ventana_key.geometry("450x200")
-    ventana_key.resizable(False, False)
-    ventana_key.attributes("-topmost", True)
-    ventana_key.configure(fg_color="#0B0F19")
-
-    key_guardada = [""]
-
-    lbl = ctk.CTkLabel(
-        ventana_key,
-        text="🔑 Se requiere clave Gemini API para continuar:\n(Se guardará permanentemente en este ordenador)",
-        font=("Segoe UI", 13, "bold"),
-        text_color="#F3F4F6"
-    )
-    lbl.pack(pady=15)
-
-    entrada = ctk.CTkEntry(
-        ventana_key,
-        placeholder_text="Pega tu API Key aquí...",
-        width=380,
-        show="*",
-        fg_color="#111827",
-        border_color="#1E293B",
-        text_color="#F3F4F6"
-    )
-    entrada.pack(pady=5)
-
-    def al_confirmar():
-        texto = entrada.get().strip()
-        if texto:
-            guardar_api_key(texto)
-            key_guardada[0] = texto
-            ventana_key.destroy()
-
-    btn = ctk.CTkButton(
-        ventana_key,
-        text="Guardar y Conectar",
-        fg_color="#06B6D4",
-        hover_color="#0891B2",
-        text_color="#0B0F19",
-        font=("Segoe UI", 12, "bold"),
-        command=al_confirmar
-    )
-    btn.pack(pady=15)
-
-    ventana_key.protocol("WM_DELETE_WINDOW", lambda: sys.exit())
-    ventana_key.mainloop()
-
-    return key_guardada[0]
-
-
-MI_API_KEY = obtener_o_pedir_api_key()
-
-
-# ==========================================
-# FUNCIÓN AUXILIAR DE SONIDO (NO BLOQUEANTE)
-# ==========================================
-def beep_async(frecuencia=800, duracion=500):
-    """Reproduce un beep en un hilo separado para no bloquear la UI."""
-    if WINSOUND_DISPONIBLE:
-        threading.Thread(
-            target=lambda: winsound.Beep(frecuencia, duracion),
-            daemon=True
-        ).start()
-
-
-# ==========================================
-# CLASE PRINCIPAL
-# ==========================================
-class AppTacografo(ctk.CTk):
-    def __init__(self):
-        super().__init__()
-
-        self.title("Copiloto Inteligente de Transporte v2.8 - Restricciones DGT Dinámicas")
-        self.geometry("1220x900")
-        self.configure(fg_color="#0B0F19")
-
-        # --- Estado del mapa y navegación ---
-        self.ruta_imagen_tique = ""
-        self.marcador_origen = None
-        self.marcador_destino = None
-        self.marcador_posicion_camion = None
-        self.ruta_trazada = None
-        self.marcadores_galibo = []
-        self.marcadores_elementos = []  # CORREGIDO: inicializado siempre en __init__
-
-        # Coordenadas por defecto (Los Palacios y Villafranca)
-        self.lat_origen = 37.16196
-        self.lon_origen = -5.90795
-        self.lat_destino_actual = None
-        self.lon_destino_actual = None
-
-        self.coordenadas_ruta = []
-        self.indice_navegacion = 0
-        self.navegacion_activa = False
-        self.modo_mapa_actual = "satelite"
-        self.distancia_total_km = 0.0
-
-        # --- Estado del cronómetro ---
-        self.segundos_conduccion_actual = 0
-        self.segundos_conduccion_totales_dia = 0      # CORREGIDO: empieza en 0, no en 6600
-        self.timer_activo = False
-        self.es_cuenta_atras = False                  # CORREGIDO: inicializado en __init__
-        self.segundos_pausa_restantes = 2700          # CORREGIDO: inicializado en __init__
-        self.estado_conductor = "Pausa / Descanso"
-        self._aviso_15min_dado = False                # Bandera para el aviso de 15 min (no repetir)
-        self._aviso_limite_dado = False               # Bandera para el aviso de límite
-
-        # --- Cliente IA ---
-        self.ai_client = None
-        if LIBS_DISPONIBLES and MI_API_KEY:
-            try:
-                self.ai_client = genai.Client(api_key=MI_API_KEY)
-            except Exception:
-                pass
-
-        # --- ESTRUCTURA PRINCIPAL ---
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
-
-        self.sidebar_frame = ctk.CTkFrame(self, width=250, fg_color="#0F172A", corner_radius=0)
-        self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
-        self.sidebar_frame.grid_propagate(False)
-
-        self.lbl_logo = ctk.CTkLabel(
-            self.sidebar_frame, text="MAGNAPHONE V2.8",
-            font=("Segoe UI", 16, "bold"), text_color="#06B6D4"
-        )
-        self.lbl_logo.pack(pady=20)
-
-        ctk.CTkLabel(
-            self.sidebar_frame, text="MÓDULOS DE CONTROL",
-            font=("Segoe UI", 11, "bold"), text_color="#64748B"
-        ).pack(anchor="w", padx=20, pady=(5, 5))
-
-        self.menu_buttons = {}
-        self.opciones = [
-            ("Tacógrafo",              "🚛 Tacógrafo"),
-            ("Cronometro Conductor",   "⏱️ Cronómetro en Ruta"),
-            ("Transporte Especial",    "⚠️ Configurar T. Especial"),
-            ("Navegador GPS",          "🗺️ Satélite, Gálibos y Peajes"),
-            ("Restricciones DGT",      "🛑 Restricciones DGT"),
-            ("Sanciones LOTT",         "⚖️ Sanciones LOTT"),
-            ("Buscador Normativa UE",  "🇪🇺 Normativa UE"),
-            ("ZBE Restricciones",      "🛑 Restricciones ZBE"),
-            ("Recursos de Sanciones",  "📑 Recursos de Sanciones"),
-            ("Asistente Transporte",   "🤖 Pregúntame"),
-            ("Visualización de Tique", "📸 Auditar Tique"),
-        ]
-
-        for key, text in self.opciones:
-            btn = ctk.CTkButton(
-                self.sidebar_frame, text=text, anchor="w", height=36,
-                fg_color="#0F172A", text_color="#E2E8F0",
-                hover_color="#1E293B",
-                font=("Segoe UI", 12, "bold"),
-                command=lambda k=key: self.cambiar_seccion(k)
-            )
-            btn.pack(fill="x", padx=10, pady=1)
-            self.menu_buttons[key] = btn
-
-        self.lbl_autor = ctk.CTkLabel(
-            self.sidebar_frame, text="por Javier Rabe",
-            font=("Segoe UI", 10, "italic"), text_color="#06B6D4"
-        )
-        self.lbl_autor.pack(side="bottom", pady=15)
-
-        self.main_container = ctk.CTkFrame(self, fg_color="#0B0F19", corner_radius=0)
-        self.main_container.grid(row=0, column=1, sticky="nsew", padx=15, pady=15)
-
-        self.vistas = {}
-        self.setup_todas_las_vistas()
-
-        self.cambiar_seccion("Tacógrafo")
-        self.obtener_ubicacion_automatica()
-        self.actualizar_timer_loop()
-
-    # ==========================================
-    # SETUP DE VISTAS
-    # ==========================================
-    def setup_todas_las_vistas(self):
-        for key, _ in self.opciones:
-            frame_vista = ctk.CTkFrame(self.main_container, fg_color="#0B0F19")
-            self.vistas[key] = frame_vista
-
-        self.setup_vista_tacografo()
-        self.setup_vista_cronometro()
-        self.setup_vista_especial()
-        self.setup_vista_gps()
-        self.setup_vista_restricciones_dgt()
-        self.setup_vista_lott()
-        self.setup_vista_normativa_ue()
-        self.setup_vista_zbe()
-        self.setup_vista_recursos()
-        self.setup_vista_ia()
-        self.setup_vista_vision()
-
-    def cambiar_seccion(self, clave_seccion):
-        for vista in self.vistas.values():
-            vista.pack_forget()
-
-        for key, btn in self.menu_buttons.items():
-            if key == clave_seccion:
-                btn.configure(fg_color="#1E3A8A", text_color="#06B6D4")
-            else:
-                btn.configure(fg_color="#0F172A", text_color="#E2E8F0")
-
-        self.vistas[clave_seccion].pack(fill="both", expand=True)
-
-        if clave_seccion == "Tacógrafo":
-            self.actualizar_grafico_instrumentos()
-        elif clave_seccion == "Restricciones DGT":
-            self.evaluar_restricciones_dgt_automaticas()
-
-    # ==========================================
-    # GEMINI - STREAMING
-    # ==========================================
-    def consulting_gemini_stream_hilo(self, prompt, widget_texto_resultado):
-        self._actualizar_caja_texto(widget_texto_resultado, "⚡ Transmitiendo respuesta en tiempo real...\n\n")
-
-        def task():
-            if not self.ai_client:
-                self.after(0, lambda: self._actualizar_caja_texto(
-                    widget_texto_resultado,
-                    "❌ Error: Cliente de Gemini no configurado.\n"
-                    "Verifica tu API Key en ~/.copiloto_transporte.ini"
-                ))
-                return
-            try:
-                response_stream = self.ai_client.models.generate_content_stream(
-                    model='gemini-2.5-flash',
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        max_output_tokens=3000,
-                        temperature=0.2
-                    )
-                )
-                for chunk in response_stream:
-                    if chunk.text:
-                        self.after(0, lambda t=chunk.text: self._anadir_texto_widget(widget_texto_resultado, t))
-            except Exception as e:
-                error_msg = str(e)
-                if "429" in error_msg or "quota" in error_msg.lower() or "exhausted" in error_msg.lower():
-                    mensaje = (
-                        "❌ [Error 429] Cuota diaria de peticiones Gemini superada.\n"
-                        "⚠️ El plan gratuito de Google limita el uso a un número máximo de consultas.\n\n"
-                        "💡 Espera aprox. 1 minuto o revisa tus límites en ai.google.dev"
-                    )
-                elif "503" in error_msg or "high demand" in error_msg.lower():
-                    mensaje = (
-                        "❌ [Error 503] Servidor Gemini saturado.\n"
-                        "⚠️ Sobrecarga temporal. Reintenta en unos instantes."
-                    )
-                else:
-                    mensaje = f"❌ Error de conexión: {error_msg}"
-                self.after(0, lambda m=mensaje: self._actualizar_caja_texto(widget_texto_resultado, m))
-
-        threading.Thread(target=task, daemon=True).start()
-
-    def _anadir_texto_widget(self, widget, texto):
-        widget.configure(state="normal")
-        widget.insert("end", texto)
-        widget.update_idletasks()
-        widget.see("end")
-        widget.configure(state="disabled")
-
-    def _actualizar_caja_texto(self, widget, texto):
-        widget.configure(state="normal")
-        widget.delete("0.0", "end")
-        widget.insert("0.0", texto)
-        widget.update_idletasks()
-        widget.see("end")
-        widget.configure(state="disabled")
-
-    # ==========================================
-    # 1. TACÓGRAFO
-    # ==========================================
-    def setup_vista_tacografo(self):
-        frame = self.vistas["Tacógrafo"]
-        ctk.CTkLabel(
-            frame,
-            text="SISTEMA DE TACÓGRAFO INTELIGENTE DE 2ª GENERACIÓN",
-            font=("Segoe UI", 15, "bold"), text_color="#F3F4F6"
-        ).pack(pady=15)
-
-        self.frame_imagen_tacho = ctk.CTkFrame(
-            frame, width=650, height=260,
-            fg_color="#0B0F19", border_width=1, border_color="#1E293B"
-        )
-        self.frame_imagen_tacho.pack(pady=10, padx=20)
-        self.frame_imagen_tacho.pack_propagate(False)
-
-        self.lbl_imagen_tacho = ctk.CTkLabel(self.frame_imagen_tacho, text="")
-        self.lbl_imagen_tacho.pack(expand=True, fill="both")
-
-        frame_selector = ctk.CTkFrame(frame, fg_color="#0B0F19")
-        frame_selector.pack(pady=15)
-
-        self.switch_vehiculo = ctk.CTkSegmentedButton(
-            frame_selector,
-            values=["CAMIÓN", "AUTOBÚS", "TRANSPORTE ESPECIAL"],
-            command=self.cambiar_tipo_vehiculo_global,
-            selected_color="#06B6D4",
-            unselected_color="#1E293B",
-            font=("Segoe UI", 11, "bold")
-        )
-        self.switch_vehiculo.set("CAMIÓN")
-        self.switch_vehiculo.grid(row=0, column=1, padx=5)
-
-        self.txt_info_taco = ctk.CTkTextbox(
-            frame, width=650, height=200,
-            font=("Segoe UI", 13), fg_color="#0B0F19",
-            text_color="#E2E8F0", border_width=1, border_color="#1E293B"
-        )
-        self.txt_info_taco.pack(pady=10)
-        self.actualizar_info_normativa("CAMIÓN")
-
-    def cambiar_tipo_vehiculo_global(self, valor):
-        self.actualizar_info_normativa(valor)
-        if MAPA_DISPONIBLE and hasattr(self, 'entry_destino') and self.entry_destino.get().strip():
-            self.buscar_y_calcular_ruta()
-
-    def actualizar_grafico_instrumentos(self):
-        ancho, alto = 650, 260
-        img = Image.new("RGB", (ancho, alto), "#0B0F19")
-        draw = ImageDraw.Draw(img)
-
-        draw.rectangle([15, 15, 310, 245], fill="#0F172A", outline="#1E293B", width=1)
-        draw.rectangle([325, 15, 635, 245], fill="#0F172A", outline="#1E293B", width=1)
-
-        draw.text((30, 30), "MONITOR DE TIEMPOS", fill="#64748B")
-
-        h_cont = self.segundos_conduccion_actual // 3600
-        m_cont = (self.segundos_conduccion_actual % 3600) // 60
-        draw.text((30, 55), f"Conducción Continuada: {h_cont:02d}h {m_cont:02d}m", fill="#06B6D4")
-
-        h_tot = self.segundos_conduccion_totales_dia // 3600
-        m_tot = (self.segundos_conduccion_totales_dia % 3600) // 60
-        draw.text((30, 85), f"Conducción Diaria Total: {h_tot:02d}h {m_tot:02d}m", fill="#F3F4F6")
-
-        es_rojo = (self.segundos_conduccion_actual >= 16200)
-        color_led = (
-            "#EF4444" if es_rojo
-            else ("#10B981" if self.estado_conductor == "Conducción" else "#F59E0B")
-        )
-        estado_texto = "ALERTA INFRACCIÓN" if es_rojo else self.estado_conductor.upper()
-
-        draw.ellipse([30, 130, 50, 150], fill=color_led)
-        draw.text((60, 133), f"ESTADO ACAP: {estado_texto}", fill=color_led)
-
-        modo_actual = self.switch_vehiculo.get()
-        if modo_actual == "TRANSPORTE ESPECIAL":
-            draw.text((30, 180), "⚠️ MODO CONVOY EXCEPCIONAL", fill="#F59E0B")
-            draw.text((30, 205), "Vmax restringida automática", fill="#94A3B8")
-        else:
-            draw.text((30, 180), f"✅ Operación de {modo_actual.capitalize()}", fill="#10B981")
-
-        draw.text((340, 30), "CONSUMO JORNADA MÁXIMA DIARIA", fill="#64748B")
-
-        limite_diario = 32400  # 9 horas
-        porcentaje_diario = min(self.segundos_conduccion_totales_dia / limite_diario, 1.0)
-
-        draw.rectangle([340, 65, 610, 95], fill="#111827", outline="#1E293B")
-        ancho_barra = int(270 * porcentaje_diario)
-        if ancho_barra > 0:
-            color_barra = (
-                "#EF4444" if porcentaje_diario > 0.9
-                else ("#F59E0B" if porcentaje_diario > 0.75 else "#10B981")
-            )
-            draw.rectangle([340, 65, 340 + ancho_barra, 95], fill=color_barra)
-
-        draw.text((340, 105), f"Utilizado: {int(porcentaje_diario * 100)}% de la cuota diaria (9h)", fill="#94A3B8")
-        draw.text((340, 150), "🛰️ Enlace Satélite GNSS: Activo", fill="#10B981")
-        draw.text((340, 175), "🔒 V.Piloto / Escolta: Conectado", fill="#38BDF8")
-        draw.text((340, 200), "🔒 Rutómetro Digital: Sincronizado", fill="#38BDF8")
-
-        ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=(ancho, alto))
-        self.lbl_imagen_tacho.configure(image=ctk_img)
-        self.lbl_imagen_tacho.image = ctk_img
-
-    def actualizar_info_normativa(self, valor):
-        self.txt_info_taco.configure(state="normal")
-        self.txt_info_taco.delete("0.0", "end")
-        if valor == "CAMIÓN":
-            texto = (
-                "■ CONDUCCIÓN CONTINUA:\n"
-                "Máximo 4 horas y 30 minutos. Pausa obligatoria de 45 min.\n\n"
-                "■ FRACCIONAMIENTO DE PAUSA: 15 min + 30 min (en ese orden).\n\n"
-                "■ CONTROL: Registro automático por satélite (tacógrafo digital).\n\n"
-                "■ CONDUCCIÓN DIARIA: Máximo 9 horas (extensible a 10h dos veces por semana)."
-            )
-        elif valor == "AUTOBÚS":
-            texto = (
-                "■ CONDUCCIÓN CONTINUA:\n"
-                "Máximo 4 horas y 30 minutos.\n\n"
-                "■ FLEXIBILIDAD EN AUTOBUSES: Bloques mínimos de 15 minutos\n"
-                "  (15+30, 30+15 o 15+15+15).\n\n"
-                "■ Acceso permitido a carriles Bus-VAO y estaciones urbanas."
-            )
-        else:
-            texto = (
-                "■ TRANSPORTE ESPECIAL (ACC):\n"
-                "Exige cumplimiento riguroso del itinerario prefijado en el rutómetro.\n\n"
-                "■ RESTRICCIONES DGT:\n"
-                "Prohibida la circulación nocturna salvo autorización expresa o\n"
-                "necesidad de acompañamiento policial (dimensiones >4.5m de ancho).\n\n"
-                "■ PROHIBICIÓN FIN DE SEMANA: Viernes 13:00 a Lunes 00:00."
-            )
-        self.txt_info_taco.insert("0.0", texto)
-        self.txt_info_taco.configure(state="disabled")
-        self.actualizar_grafico_instrumentos()
-
-    # ==========================================
-    # 2. CRONÓMETRO EN RUTA
-    # ==========================================
-    def setup_vista_cronometro(self):
-        frame = self.vistas["Cronometro Conductor"]
-        ctk.CTkLabel(
-            frame,
-            text="REGISTRO DE ACTIVIDAD Y TIEMPOS DE CONDUCCIÓN EN VIVO",
-            font=("Segoe UI", 15, "bold"), text_color="#F3F4F6"
-        ).pack(pady=15)
-
-        frame_box = ctk.CTkFrame(frame, fg_color="#0B0F19", border_width=1, border_color="#1E293B")
-        frame_box.pack(pady=10, padx=30, fill="x")
-
-        self.lbl_estado_actual = ctk.CTkLabel(
-            frame_box, text=f"ESTADO: {self.estado_conductor}",
-            font=("Segoe UI", 14, "bold"), text_color="#F59E0B"
-        )
-        self.lbl_estado_actual.pack(pady=10)
-
-        self.lbl_cronometro_visual = ctk.CTkLabel(
-            frame_box, text="00:00:00",
-            font=("Consolas", 36, "bold"), text_color="#06B6D4"
-        )
-        self.lbl_cronometro_visual.pack(pady=5)
-
-        self.progress_barra_tiempo = ctk.CTkProgressBar(frame_box, width=500, height=15, progress_color="#10B981")
-        self.progress_barra_tiempo.set(0.0)
-        self.progress_barra_tiempo.pack(pady=15)
-
-        self.lbl_info_limite = ctk.CTkLabel(
-            frame_box,
-            text="Tiempo disponible antes de pausa obligatoria: 4h 30m",
-            font=("Segoe UI", 12), text_color="#94A3B8"
-        )
-        self.lbl_info_limite.pack(pady=5)
-
-        frame_botones_timer = ctk.CTkFrame(frame, fg_color="#0B0F19")
-        frame_botones_timer.pack(pady=15)
-
-        ctk.CTkButton(
-            frame_botones_timer, text="🚛 Conducir",
-            fg_color="#10B981", hover_color="#059669", text_color="#0B0F19",
-            font=("Segoe UI", 12, "bold"),
-            command=lambda: self.set_estado_conductor("Conducción")
-        ).grid(row=0, column=0, padx=8)
-
-        ctk.CTkButton(
-            frame_botones_timer, text="⏸️ Pausa",
-            fg_color="#F59E0B", hover_color="#D97706", text_color="#0B0F19",
-            font=("Segoe UI", 12, "bold"),
-            command=lambda: self.set_estado_conductor("Pausa / Descanso")
-        ).grid(row=0, column=1, padx=8)
-
-        ctk.CTkButton(
-            frame_botones_timer, text="🛠️ Otros Trabajos",
-            fg_color="#3B82F6", hover_color="#2563EB", text_color="#F3F4F6",
-            font=("Segoe UI", 12, "bold"),
-            command=lambda: self.set_estado_conductor("Otros Trabajos")
-        ).grid(row=0, column=2, padx=8)
-
-        ctk.CTkButton(
-            frame_botones_timer, text="🔄 Reiniciar Tiempos",
-            fg_color="#EF4444", hover_color="#DC2626", text_color="#F3F4F6",
-            font=("Segoe UI", 12, "bold"),
-            command=self.reiniciar_cronometro_ruta
-        ).grid(row=0, column=3, padx=8)
-
-    def reiniciar_cronometro_ruta(self):
-        self.segundos_conduccion_actual = 0
-        self.segundos_conduccion_totales_dia = 0
-        self.timer_activo = False
-        self.es_cuenta_atras = False
-        self.segundos_pausa_restantes = 2700
-        self._aviso_15min_dado = False
-        self._aviso_limite_dado = False
-        self.estado_conductor = "Pausa / Descanso"
-        self.lbl_estado_actual.configure(text=f"ESTADO: {self.estado_conductor}", text_color="#F59E0B")
-        self.lbl_cronometro_visual.configure(text="00:00:00", text_color="#06B6D4")
-        self.progress_barra_tiempo.set(0.0)
-        self.progress_barra_tiempo.configure(progress_color="#10B981")
-        self.lbl_info_limite.configure(
-            text="Tiempo disponible antes de pausa obligatoria: 4h 30m",
-            text_color="#94A3B8"
-        )
-        self.actualizar_grafico_instrumentos()
-
-    def set_estado_conductor(self, nuevo_estado):
-        self.estado_conductor = nuevo_estado
-        self.timer_activo = True
-
-        if "Pausa" in nuevo_estado:
-            self.es_cuenta_atras = True
-            self.segundos_pausa_restantes = 2700  # 45 minutos
-            # Al pausar, reseteamos las banderas de aviso para el próximo período
-            self._aviso_15min_dado = False
-            self._aviso_limite_dado = False
-            self.segundos_conduccion_actual = 0   # Reset conducción continua al hacer pausa
-            self.lbl_estado_actual.configure(
-                text=f"ESTADO: {self.estado_conductor}",
-                text_color="#F59E0B"
-            )
-            self.lbl_cronometro_visual.configure(text_color="#F59E0B")
-            self.lbl_info_limite.configure(
-                text="⏸️ Pausa en curso — Cuenta atrás: 45:00 min",
-                text_color="#F59E0B"
-            )
-        else:
-            self.es_cuenta_atras = False
-            color = "#10B981" if nuevo_estado == "Conducción" else "#3B82F6"
-            self.lbl_estado_actual.configure(
-                text=f"ESTADO: {self.estado_conductor}",
-                text_color=color
-            )
-            self.lbl_cronometro_visual.configure(text_color="#06B6D4")
-
-        self.actualizar_grafico_instrumentos()
-
-    def actualizar_timer_loop(self):
-        if self.timer_activo:
-            if self.es_cuenta_atras:
-                # --- MODO PAUSA (cuenta atrás) ---
-                if self.segundos_pausa_restantes > 0:
-                    self.segundos_pausa_restantes -= 1
-                    tiempo_visual = self.segundos_pausa_restantes
-                    minutos_rest = tiempo_visual // 60
-                    segundos_rest = tiempo_visual % 60
-                    self.lbl_info_limite.configure(
-                        text=f"⏸️ Pausa en curso — Restante: {minutos_rest:02d}:{segundos_rest:02d}",
-                        text_color="#F59E0B"
-                    )
-                    # Barra de pausa (inversa: llena al inicio, vacía al final)
-                    self.progress_barra_tiempo.set(tiempo_visual / 2700)
-                    self.progress_barra_tiempo.configure(progress_color="#F59E0B")
-                else:
-                    self.timer_activo = False
-                    tiempo_visual = 0
-                    self.lbl_estado_actual.configure(
-                        text="🚨 ¡PAUSA TERMINADA! Puede conducir",
-                        text_color="#10B981"
-                    )
-                    self.lbl_info_limite.configure(
-                        text="✅ Pausa completada — Listo para conducir",
-                        text_color="#10B981"
-                    )
-                    self.progress_barra_tiempo.set(0.0)
-                    self.progress_barra_tiempo.configure(progress_color="#10B981")
-                    beep_async(1000, 1000)
-            else:
-                # --- MODO CONDUCCIÓN / TRABAJO ---
-                if self.estado_conductor == "Conducción":
-                    self.segundos_conduccion_actual += 1
-                    self.segundos_conduccion_totales_dia += 1
-
-                    limite_max = 16200  # 4h 30min
-
-                    # Aviso preventivo a las 4h 15m (15300 seg)
-                    if self.segundos_conduccion_actual == 15300 and not self._aviso_15min_dado:
-                        self._aviso_15min_dado = True
-                        beep_async(800, 500)
-                        self.lbl_cronometro_visual.configure(text_color="#F59E0B")
-                        self.lbl_estado_actual.configure(
-                            text="⚠️ AVISO: Busca estacionamiento (15 min restantes)",
-                            text_color="#F59E0B"
-                        )
-
-                    # Límite reglamentario a las 4h 30m (16200 seg)
-                    elif self.segundos_conduccion_actual >= limite_max and not self._aviso_limite_dado:
-                        self._aviso_limite_dado = True
-                        beep_async(1500, 500)
-                        self.lbl_cronometro_visual.configure(text_color="#EF4444")
-                        self.lbl_estado_actual.configure(
-                            text="🛑 INFRACCIÓN: DETENGA EL VEHÍCULO INMEDIATAMENTE",
-                            text_color="#EF4444"
-                        )
-
-                    # Actualizar barra de conducción
-                    porcentaje = min(self.segundos_conduccion_actual / limite_max, 1.0)
-                    self.progress_barra_tiempo.set(porcentaje)
-                    color_barra = (
-                        "#EF4444" if porcentaje > 0.95
-                        else ("#F59E0B" if porcentaje > 0.85 else "#10B981")
-                    )
-                    self.progress_barra_tiempo.configure(progress_color=color_barra)
-
-                    # Actualizar etiqueta de tiempo restante
-                    restantes = max(0, limite_max - self.segundos_conduccion_actual)
-                    h_r = restantes // 3600
-                    m_r = (restantes % 3600) // 60
-                    self.lbl_info_limite.configure(
-                        text=f"Tiempo antes de pausa obligatoria: {h_r}h {m_r:02d}m",
-                        text_color="#94A3B8"
-                    )
-
-                tiempo_visual = self.segundos_conduccion_actual
-
-            # Formatear y mostrar tiempo en cronómetro
-            h = tiempo_visual // 3600
-            m = (tiempo_visual % 3600) // 60
-            s = tiempo_visual % 60
-            self.lbl_cronometro_visual.configure(text=f"{h:02d}:{m:02d}:{s:02d}")
-
-        self.after(1000, self.actualizar_timer_loop)
-
-    # ==========================================
-    # 3. TRANSPORTE ESPECIAL
-    # ==========================================
-    def setup_vista_especial(self):
-        frame = self.vistas["Transporte Especial"]
-        ctk.CTkLabel(
-            frame,
-            text="CALCULADOR DE CATEGORÍA Y REQUISITOS DE TRANSPORTE ESPECIAL",
-            font=("Segoe UI", 15, "bold"), text_color="#F3F4F6"
-        ).pack(pady=15)
-
-        container_inputs = ctk.CTkFrame(frame, fg_color="#0B0F19", border_width=1, border_color="#1E293B")
-        container_inputs.pack(pady=10, padx=30, fill="x")
-
-        ctk.CTkLabel(container_inputs, text="Anchura Total (m):", font=("Segoe UI", 12), text_color="#38BDF8").grid(row=0, column=0, padx=15, pady=10, sticky="w")
-        self.entry_ancho = ctk.CTkEntry(container_inputs, width=120)
-        self.entry_ancho.insert(0, "3.20")
-        self.entry_ancho.grid(row=0, column=1, padx=15, pady=10)
-
-        ctk.CTkLabel(container_inputs, text="Longitud Total (m):", font=("Segoe UI", 12), text_color="#38BDF8").grid(row=0, column=2, padx=15, pady=10, sticky="w")
-        self.entry_longitud = ctk.CTkEntry(container_inputs, width=120)
-        self.entry_longitud.insert(0, "22.50")
-        self.entry_longitud.grid(row=0, column=3, padx=15, pady=10)
-
-        ctk.CTkLabel(container_inputs, text="Masa Conjunto (ton):", font=("Segoe UI", 12), text_color="#38BDF8").grid(row=1, column=0, padx=15, pady=10, sticky="w")
-        self.entry_masa = ctk.CTkEntry(container_inputs, width=120)
-        self.entry_masa.insert(0, "55.0")
-        self.entry_masa.grid(row=1, column=1, padx=15, pady=10)
-
-        ctk.CTkLabel(container_inputs, text="Altura Máxima (m):", font=("Segoe UI", 12), text_color="#38BDF8").grid(row=1, column=2, padx=15, pady=10, sticky="w")
-        self.entry_altura = ctk.CTkEntry(container_inputs, width=120)
-        self.entry_altura.insert(0, "4.30")
-        self.entry_altura.grid(row=1, column=3, padx=15, pady=10)
-
-        btn_analizar = ctk.CTkButton(
-            frame, text="🛡️ Auditar Requisitos de Circulación",
-            fg_color="#06B6D4", text_color="#0B0F19",
-            font=("Segoe UI", 12, "bold"),
-            command=self.calcular_requisitos_especiales
-        )
-        btn_analizar.pack(pady=15)
-
-        self.txt_resultado_especial = ctk.CTkTextbox(frame, height=320, font=("Consolas", 12))
-        self.txt_resultado_especial.pack(pady=10, padx=30, fill="both", expand=True)
-        self.txt_resultado_especial.insert("0.0", "Introduce los datos del convoy indivisible y pulsa Auditar.")
-        self.txt_resultado_especial.configure(state="disabled")
-
-    def calcular_requisitos_especiales(self):
-        """CORREGIDO: nombre del método y variable 'masa' (antes 'decay')."""
-        try:
-            ancho = float(self.entry_ancho.get())
-            longitud = float(self.entry_longitud.get())
-            masa = float(self.entry_masa.get())   # CORREGIDO: era 'decay'
-            altura = float(self.entry_altura.get())
-        except ValueError:
-            self._actualizar_caja_texto(
-                self.txt_resultado_especial,
-                "❌ Error: Introduce valores numéricos válidos en todos los campos."
-            )
-            return
-
-        categoria = "RÉGIMEN COMÚN (No Especial)"
-        acompanamiento = "Ninguno requerido"
-        velocidad_max = "Estándar de la vía"
-        requisitos_extra = []
-
-        if ancho > 3.0 or longitud > 20.55 or masa > 40.0 or altura > 4.0:
-            if ancho <= 3.5 and longitud <= 24.95 and masa <= 56.0:
-                categoria = "CATEGORÍA I (Autorización Genérica — OC-AUTOG)"
-                acompanamiento = "1 Vehículo Piloto detrás (Autovía) o delante (Convencional)."
-                velocidad_max = "70 km/h en Autovía / 60 km/h en Convencional."
-                requisitos_extra = ["Señalización luminosa obligatoria.", "Rutómetro aprobado por Delegación."]
-            elif ancho <= 5.0 and longitud <= 40.0 and masa <= 110.0:
-                categoria = "CATEGORÍA II (Autorización Específica — OC-ESPE)"
-                velocidad_max = "60 km/h en Autovía / 50 km/h en Convencional."
-                acompanamiento = "2 Vehículos Piloto si ancho > 3.75m. 1 Piloto en resto de casos."
-                requisitos_extra = ["Comunicación previa a la DGT.", "Autorización específica de itinerario."]
-            else:
-                categoria = "CATEGORÍA III (Autorización Excepcional — OC-EXCE)"
-                acompanamiento = "Coches piloto + Escolta obligatoria de G. Civil / Policía."
-                velocidad_max = "MÁXIMO 45 km/h."
-                requisitos_extra = [
-                    "Estudio técnico de itinerario obligatorio.",
-                    "Autorización individual firmada por la DGT.",
-                    "Prohibida circulación nocturna.",
-                    "Prohibida circulación en fines de semana y festivos."
-                ]
-
-        extras_texto = "\n".join(f"   • {r}" for r in requisitos_extra) if requisitos_extra else "   • Sin requisitos adicionales."
-
-        informe = (
-            f"📋 DIAGNÓSTICO LEGAL PARA CONVOY ESPECIAL\n"
-            f"{'─' * 50}\n"
-            f"📐 DATOS INTRODUCIDOS:\n"
-            f"   Ancho: {ancho}m | Longitud: {longitud}m | Masa: {masa}t | Altura: {altura}m\n\n"
-            f"🔹 CLASIFICACIÓN: {categoria}\n"
-            f"🔹 VELOCIDAD LÍMITE: {velocidad_max}\n"
-            f"🔹 ESCOLTA / PILOTO: {acompanamiento}\n\n"
-            f"📋 REQUISITOS ADICIONALES:\n{extras_texto}\n\n"
-            f"🚨 RESTRICCIONES GENERALES DE LA DGT:\n"
-            f"   1. Prohibida circulación viernes 13:00 a lunes 00:00 (y vísperas de festivo).\n"
-            f"   2. Obligatorio portar copia de la autorización en el vehículo.\n"
-            f"   3. En caso de incidencia, comunicar inmediatamente a la DGT."
-        )
-
-        self._actualizar_caja_texto(self.txt_resultado_especial, informe)
-
-    # ==========================================
-    # 4. NAVEGADOR GPS
-    # ==========================================
-    def setup_vista_gps(self):
-        frame = self.vistas["Navegador GPS"]
-        if not MAPA_DISPONIBLE:
-            ctk.CTkLabel(
-                frame,
-                text="⚠️ Módulo de mapa no disponible.\nInstala: pip install tkintermapview",
-                font=("Segoe UI", 14), text_color="#F59E0B"
-            ).pack(pady=50)
-            return
-
-        frame_controles = ctk.CTkFrame(frame, fg_color="#0B0F19")
-        frame_controles.pack(pady=10, padx=15, fill="x")
-
-        self.entry_destino = ctk.CTkEntry(
-            frame_controles,
-            placeholder_text="Introduce dirección o ciudad de destino...",
-            fg_color="#111827", border_color="#1E293B", text_color="#F3F4F6"
-        )
-        self.entry_destino.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        self.entry_destino.bind("<Return>", lambda e: self.buscar_y_calcular_ruta())
-
-        ctk.CTkButton(frame_controles, text="🛣️ Buscar Ruta", font=("Segoe UI", 11, "bold"),
-                      fg_color="#06B6D4", text_color="#0B0F19",
-                      command=self.buscar_y_calcular_ruta, width=90).pack(side="right", padx=2)
-
-        ctk.CTkButton(frame_controles, text="📍 Mi Ubicación", font=("Segoe UI", 11, "bold"),
-                      fg_color="#1E3A8A", command=self.obtener_ubicacion_automatica, width=95).pack(side="right", padx=2)
-
-        ctk.CTkButton(frame_controles, text="🔄 Reset", font=("Segoe UI", 11, "bold"),
-                      fg_color="#EF4444", text_color="#F3F4F6", hover_color="#DC2626",
-                      command=self.reiniciar_mapa_y_navegacion, width=70).pack(side="right", padx=2)
-
-        self.btn_cambiar_mapa = ctk.CTkButton(
-            frame_controles, text="🗺️ Vista: Satélite",
-            font=("Segoe UI", 11, "bold"), fg_color="#475569", text_color="#F3F4F6",
-            command=self.alternar_tipo_mapa, width=110
-        )
-        self.btn_cambiar_mapa.pack(side="right", padx=2)
-
-        self.btn_guiar = ctk.CTkButton(
-            frame_controles, text="🛰️ Iniciar GPS",
-            font=("Segoe UI", 11, "bold"), fg_color="#10B981", text_color="#0B0F19",
-            command=self.conmutar_navegacion, width=95, state="disabled"
-        )
-        self.btn_guiar.pack(side="right", padx=2)
-
-        self.btn_street_view = ctk.CTkButton(
-            frame_controles, text="📷 Street View",
-            font=("Segoe UI", 11, "bold"), fg_color="#F59E0B", text_color="#0B0F19",
-            command=self.abrir_street_view_destino, width=100, state="disabled"
-        )
-        self.btn_street_view.pack(side="right")
-
-        self.frame_instruccion_satelital = ctk.CTkFrame(
-            frame, height=50, fg_color="#1E293B", border_width=1, border_color="#06B6D4"
-        )
-        self.frame_instruccion_satelital.pack(fill="x", padx=15, pady=(0, 5))
-        self.frame_instruccion_satelital.pack_propagate(False)
-
-        self.lbl_instruccion_satelital = ctk.CTkLabel(
-            self.frame_instruccion_satelital,
-            text="🛰️ SISTEMA GNSS // Selecciona un vehículo en el Tacógrafo.",
-            font=("Segoe UI", 12, "bold"), text_color="#06B6D4"
-        )
-        self.lbl_instruccion_satelital.pack(pady=12, padx=10, anchor="w")
-
-        self.mapa_widget = tkintermapview.TkinterMapView(frame, corner_radius=10)
-        self.mapa_widget.pack(fill="both", expand=True, padx=15, pady=5)
-        self.mapa_widget.set_tile_server("https://mt0.google.com/vt/lyrs=s,h&hl=es&x={x}&y={y}&z={z}")
-        self.mapa_widget.add_left_click_map_command(self.detectar_doble_clic_streetview)
-
-        self.txt_desglose_ruta = ctk.CTkTextbox(
-            frame, height=140, fg_color="#0B0F19",
-            border_width=1, border_color="#1E293B", font=("Consolas", 11)
-        )
-        self.txt_desglose_ruta.pack(pady=10, padx=15, fill="x")
-        self.txt_desglose_ruta.insert("0.0", "Introduce un destino para trazar la ruta parametrizada por el Tacógrafo...")
-        self.txt_desglose_ruta.configure(state="disabled")
-
-    def limpiar_marcadores_galibo(self):
-        for m in self.marcadores_galibo:
-            try:
-                m.delete()
-            except Exception:
-                pass
-        self.marcadores_galibo.clear()
-
-    def reiniciar_mapa_y_navegacion(self):
-        self.navegacion_activa = False
-        self.set_estado_conductor("Pausa / Descanso")
-
-        if self.marcador_destino:
-            try:
-                self.marcador_destino.delete()
-            except Exception:
-                pass
-        if self.ruta_trazada:
-            try:
-                self.ruta_trazada.delete()
-            except Exception:
-                pass
-        if self.marcador_posicion_camion:
-            try:
-                self.marcador_posicion_camion.delete()
-            except Exception:
-                pass
-
-        for m in self.marcadores_elementos:
-            try:
-                m.delete()
-            except Exception:
-                pass
-        self.marcadores_elementos.clear()
-        self.limpiar_marcadores_galibo()
-
-        self.marcador_destino = None
-        self.ruta_trazada = None
-        self.marcador_posicion_camion = None
-        self.coordenadas_ruta = []
-        self.indice_navegacion = 0
-        self.lat_destino_actual = None
-        self.lon_destino_actual = None
-        self.distancia_total_km = 0.0
-
-        if hasattr(self, 'entry_destino'):
-            self.entry_destino.delete(0, "end")
-        if hasattr(self, 'btn_guiar'):
-            self.btn_guiar.configure(text="🛰️ Iniciar GPS", fg_color="#10B981", state="disabled")
-        if hasattr(self, 'btn_street_view'):
-            self.btn_street_view.configure(state="disabled")
-        if hasattr(self, 'txt_desglose_ruta'):
-            self._actualizar_caja_texto(self.txt_desglose_ruta, "Mapa reiniciado. Introduce un nuevo destino...")
-        if hasattr(self, 'lbl_instruccion_satelital'):
-            self.lbl_instruccion_satelital.configure(
-                text="🔄 MAPA RESETEADO // Forzando localización...", text_color="#06B6D4"
-            )
-
-        self.obtener_ubicacion_automatica()
-
-    def alternar_tipo_mapa(self):
-        if not MAPA_DISPONIBLE or not hasattr(self, 'mapa_widget'):
-            return
-        if self.modo_mapa_actual == "satelite":
-            self.mapa_widget.set_tile_server("https://mt0.google.com/vt/lyrs=m&hl=es&x={x}&y={y}&z={z}")
-            self.btn_cambiar_mapa.configure(text="🗺️ Vista: Callejero", fg_color="#06B6D4", text_color="#0B0F19")
-            self.modo_mapa_actual = "callejero"
-        else:
-            self.mapa_widget.set_tile_server("https://mt0.google.com/vt/lyrs=s,h&hl=es&x={x}&y={y}&z={z}")
-            self.btn_cambiar_mapa.configure(text="🗺️ Vista: Satélite", fg_color="#475569", text_color="#F3F4F6")
-            self.modo_mapa_actual = "satelite"
-
-    def detectar_doble_clic_streetview(self, coordenadas):
-        lat, lon = coordenadas
-        url_sv = f"https://www.google.com/maps/@?api=1&map_action=pano&viewpoint={lat},{lon}"
-        webbrowser.open(url_sv)
-
-    def abrir_street_view_destino(self):
-        if self.lat_destino_actual and self.lon_destino_actual:
-            url_sv = f"https://www.google.com/maps/@?api=1&map_action=pano&viewpoint={self.lat_destino_actual},{self.lon_destino_actual}"
-            webbrowser.open(url_sv)
-
-    def obtener_ubicacion_automatica(self):
-        threading.Thread(target=self._hilo_geolocalizar, daemon=True).start()
-
-    def _hilo_geolocalizar(self):
-        if not MAPA_DISPONIBLE:
-            return
-        try:
-            respuesta = requests.get("https://ipapi.co/json/", timeout=4)
-            datos = respuesta.json()
-            if "latitude" in datos and "longitude" in datos:
-                self.lat_origen = float(datos["latitude"])
-                self.lon_origen = float(datos["longitude"])
-                self.after(0, self._actualizar_marcador_origen_flecha)
-                return
-        except Exception:
-            pass
-
-        # Fallback a coordenadas por defecto
-        self.lat_origen = 37.16196
-        self.lon_origen = -5.90795
-        self.after(0, self._actualizar_marcador_origen_flecha)
-
-    def _actualizar_marcador_origen_flecha(self):
-        if not hasattr(self, 'mapa_widget'):
-            return
-        if self.marcador_posicion_camion:
-            try:
-                self.marcador_posicion_camion.delete()
-            except Exception:
-                pass
-        tipo_v = self.switch_vehiculo.get()
-        self.marcador_posicion_camion = self.mapa_widget.set_marker(
-            self.lat_origen, self.lon_origen,
-            text=f"📍 {tipo_v}", text_color="#00FF66"
-        )
-        self.mapa_widget.set_position(self.lat_origen, self.lon_origen)
-        self.mapa_widget.set_zoom(14)
-
-    def buscar_y_calcular_ruta(self):
-        if not hasattr(self, 'entry_destino'):
-            return
-        destino_texto = self.entry_destino.get().strip()
-        if not destino_texto:
-            return
-        self._actualizar_caja_texto(
-            self.txt_desglose_ruta,
-            "🔍 Buscando destino y calculando ruta optimizada para vehículos pesados..."
-        )
-        threading.Thread(target=self._hilo_calcular_ruta_pesados, args=(destino_texto,), daemon=True).start()
-
-    def _hilo_calcular_ruta_pesados(self, destino_texto):
-        destino_url = urllib.parse.quote(destino_texto)
-        lat_dest, lon_dest = None, None
-
-        try:
-            url_geo = f"https://nominatim.openstreetmap.org/search?format=json&q={destino_url}&limit=1"
-            req = urllib.request.Request(url_geo, headers={'User-Agent': 'CopilotoTransporteApp/2.8'})
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                res_geo = json.loads(resp.read().decode())
-                if res_geo:
-                    lat_dest = float(res_geo[0]["lat"])
-                    lon_dest = float(res_geo[0]["lon"])
-                    self.lat_destino_actual = lat_dest
-                    self.lon_destino_actual = lon_dest
-                else:
-                    self.after(0, lambda: self._actualizar_caja_texto(
-                        self.txt_desglose_ruta, "❌ Error: Dirección no encontrada. Prueba a ser más específico."
-                    ))
-                    return
-        except Exception as e:
-            self.after(0, lambda: self._actualizar_caja_texto(
-                self.txt_desglose_ruta, f"❌ Error de red al geolocalizar: {e}"
-            ))
-            return
-
-        puntos_ruta = []
-        distancia_metros = 0
-
-        try:
-            url_osrm = (
-                f"https://router.project-osrm.org/route/v1/driving/"
-                f"{self.lon_origen},{self.lat_origen};{lon_dest},{lat_dest}"
-                f"?overview=full&geometries=geojson"
-            )
-            req_route = urllib.request.Request(url_osrm, headers={'User-Agent': 'CopilotoTransporteApp/2.8'})
-            with urllib.request.urlopen(req_route, timeout=8) as resp_route:
-                res_route = json.loads(resp_route.read().decode())
-                if res_route.get("code") == "Ok":
-                    ruta_data = res_route["routes"][0]
-                    distancia_metros = ruta_data["distance"]
-                    for lon, lat in ruta_data["geometry"]["coordinates"]:
-                        puntos_ruta.append((lat, lon))
-        except Exception:
-            pass
-
-        if not puntos_ruta:
-            # Fallback: línea recta interpolada
-            pasos = 20
-            for i in range(pasos + 1):
-                alpha = i / pasos
-                puntos_ruta.append((
-                    self.lat_origen + (lat_dest - self.lat_origen) * alpha,
-                    self.lon_origen + (lon_dest - self.lon_origen) * alpha
-                ))
-            distancia_metros = self.calcular_distancia_nodos(
-                (self.lat_origen, self.lon_origen), (lat_dest, lon_dest)
-            ) * 1000
-
-        self.coordenadas_ruta = puntos_ruta
-        self.distancia_total_km = distancia_metros / 1000
-
-        tipo_vehiculo = self.switch_vehiculo.get()
-
-        # CORREGIDO: Obtener altura de forma segura
-        altura_vehiculo = 4.0
-        if tipo_vehiculo == "TRANSPORTE ESPECIAL" and hasattr(self, 'entry_altura'):
-            try:
-                altura_vehiculo = float(self.entry_altura.get())
-            except (ValueError, Exception):
-                altura_vehiculo = 4.30
-        elif tipo_vehiculo == "CAMIÓN":
-            altura_vehiculo = 4.0
-        elif tipo_vehiculo == "AUTOBÚS":
-            altura_vehiculo = 3.5
-
-        # Simular detección de gálibos en ruta
-        lista_puentes_conflictivos = []
-        if len(puntos_ruta) > 5:
-            num_puentes = min(3, max(1, int(self.distancia_total_km / 80)))
-            segmento = len(puntos_ruta) // (num_puentes + 1)
-            for index in range(1, num_puentes + 1):
-                idx_nodo = index * segmento
-                if idx_nodo < len(puntos_ruta):
-                    lat_p, lon_p = puntos_ruta[idx_nodo]
-                    random.seed(idx_nodo + int(self.distancia_total_km))
-                    galibo_puente = round(random.uniform(3.80, 4.80), 2)
-                    if altura_vehiculo >= galibo_puente:
-                        lista_puentes_conflictivos.append({
-                            "coordenadas": (lat_p, lon_p),
-                            "altura_puente": galibo_puente,
-                            "km_aprox": round((idx_nodo / len(puntos_ruta)) * self.distancia_total_km, 1)
-                        })
-
-        # Parámetros según tipo de vehículo
-        if tipo_vehiculo == "CAMIÓN":
-            velocidad_media = 80.0
-            restricciones = (
-                "• RESTRICCIONES: Rutas de mercancías activas. Evitando centros urbanos.\n"
-                "• VELOCIDAD RECOMENDADA: Máxima 90 km/h en autovías."
-            )
-            alerta_sat = "🛰️ MODO TELEMÉTRICO: CAMIÓN PESADO // Ruta optimizada Red Estado."
-            color_instruccion = "#06B6D4"
-        elif tipo_vehiculo == "AUTOBÚS":
-            velocidad_media = 90.0
-            restricciones = (
-                "• RESTRICCIONES: Acceso permitido a carriles Bus-VAO y estaciones urbanas.\n"
-                "• VELOCIDAD RECOMENDADA: Máxima 100 km/h en autovías."
-            )
-            alerta_sat = "🛰️ MODO TELEMÉTRICO: AUTOBÚS / VIAJEROS // Ejes viarios urbanos habilitados."
-            color_instruccion = "#38BDF8"
-        else:
-            velocidad_media = 50.0
-            restricciones = (
-                f"• ⚠️ TRANSPORTE ESPECIAL (h={altura_vehiculo}m): Evitando túneles y puentes de gálibo inferior.\n"
-                "• REQUISITO: Rutómetro DGT obligatorio. Solo horarios diurnos."
-            )
-            alerta_sat = "⚠️ ALERTA CONVOY: TRANSPORTE ESPECIAL // Gálibos auditados. Velocidad limitada."
-            color_instruccion = "#F59E0B"
-
-        duracion_s = (self.distancia_total_km / velocidad_media) * 3600
-        horas_viaje = int(duracion_s // 3600)
-        minutos_viaje = int((duracion_s % 3600) // 60)
-
-        texto_desglose = (
-            f"🛣️ ITINERARIO PROFESIONAL [{tipo_vehiculo}] (Altura vehículo: {altura_vehiculo}m)\n"
-            f"{'─' * 60}\n"
-            f"• Origen:    {self.lat_origen:.4f}, {self.lon_origen:.4f}\n"
-            f"• Destino:   {lat_dest:.4f}, {lon_dest:.4f}\n"
-            f"• Distancia: {self.distancia_total_km:.2f} km  |  ETA: {horas_viaje}h {minutos_viaje}min\n"
-            f"{restricciones}\n"
-        )
-
-        if lista_puentes_conflictivos:
-            texto_desglose += "🚨 ¡ALERTA DE GÁLIBO! Puentes incompatibles detectados:\n"
-            for p in lista_puentes_conflictivos:
-                texto_desglose += f"   ❌ KM {p['km_aprox']}: Altura puente {p['altura_puente']}m — ¡RIESGO DE COLISIÓN!\n"
-        else:
-            texto_desglose += "✅ GÁLIBOS LIMPIOS: Sin limitaciones de altura estructural detectadas."
-
-        self.after(0, lambda: self._dibujar_ruta_y_desglose(
-            lat_dest, lon_dest, puntos_ruta,
-            texto_desglose, alerta_sat, color_instruccion,
-            lista_puentes_conflictivos
-        ))
-
-    def _dibujar_ruta_y_desglose(self, lat_d, lon_d, puntos, texto, texto_sat, color_sat, puentes_riesgo):
-        if self.marcador_destino:
-            try:
-                self.marcador_destino.delete()
-            except Exception:
-                pass
-        if self.ruta_trazada:
-            try:
-                self.ruta_trazada.delete()
-            except Exception:
-                pass
-        self.limpiar_marcadores_galibo()
-
-        tipo_v = self.switch_vehiculo.get()
-        self.marcador_destino = self.mapa_widget.set_marker(lat_d, lon_d, text=f"🏁 Destino [{tipo_v}]")
-        self.ruta_trazada = self.mapa_widget.set_path(puntos, color="#FF0055", width=4)
-        self.mapa_widget.set_position(puntos[len(puntos) // 2][0], puntos[len(puntos) // 2][1])
-        self.mapa_widget.set_zoom(10)
-
-        for p in puentes_riesgo:
-            lat_p, lon_p = p["coordenadas"]
-            m_galibo = self.mapa_widget.set_marker(
-                lat_p, lon_p,
-                text=f"🛑 GÁLIBO {p['altura_puente']}m",
-                text_color="#FF0000"
-            )
-            self.marcadores_galibo.append(m_galibo)
-
-        self.btn_street_view.configure(state="normal")
-        self.btn_guiar.configure(state="normal")
-        self.lbl_instruccion_satelital.configure(text=texto_sat, text_color=color_sat)
-        self._actualizar_caja_texto(self.txt_desglose_ruta, texto)
-
-    def calcular_distancia_nodos(self, p1, p2):
-        R = 6371.0
-        lat1, lon1 = math.radians(p1[0]), math.radians(p1[1])
-        lat2, lon2 = math.radians(p2[0]), math.radians(p2[1])
-        a = (math.sin((lat2 - lat1) / 2) ** 2
-             + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2)
-        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-    def conmutar_navegacion(self):
-        if not self.navegacion_activa:
-            self.navegacion_activa = True
-            self.indice_navegacion = 0
-            self.btn_guiar.configure(text="🛑 Detener GPS", fg_color="#EF4444")
-            self.set_estado_conductor("Conducción")
-            self.bucle_guiado_satelital()
-        else:
-            self.navegacion_activa = False
-            self.btn_guiar.configure(text="🛰️ Iniciar GPS", fg_color="#10B981")
-            self.set_estado_conductor("Pausa / Descanso")
-
-    def bucle_guiado_satelital(self):
-        if not self.navegacion_activa or not self.coordenadas_ruta:
-            return
-        if self.indice_navegacion < len(self.coordenadas_ruta):
-            punto_actual = self.coordenadas_ruta[self.indice_navegacion]
-            if self.marcador_posicion_camion:
-                try:
-                    self.marcador_posicion_camion.delete()
-                except Exception:
-                    pass
-            tipo_v = self.switch_vehiculo.get()
-            self.marcador_posicion_camion = self.mapa_widget.set_marker(
-                punto_actual[0], punto_actual[1],
-                text=f"🚛 {tipo_v} EN RUTA", text_color="#00FF66"
-            )
-            self.mapa_widget.set_position(punto_actual[0], punto_actual[1])
-            self.indice_navegacion += max(1, len(self.coordenadas_ruta) // 40)
-            self.after(800, self.bucle_guiado_satelital)
-        else:
-            self.navegacion_activa = False
-            self.btn_guiar.configure(text="🛰️ Iniciar GPS", fg_color="#10B981", state="disabled")
-            self.lbl_instruccion_satelital.configure(
-                text="✅ DESTINO ALCANZADO // Navegación finalizada.", text_color="#10B981"
-            )
-
-    # ==========================================
-    # 5. RESTRICCIONES DGT
-    # ==========================================
-    def setup_vista_restricciones_dgt(self):
-        frame = self.vistas["Restricciones DGT"]
-        ctk.CTkLabel(
-            frame,
-            text="🛑 AUDITORÍA DINÁMICA DE RESTRICCIONES DGT POR FECHA Y CONVOY",
-            font=("Segoe UI", 15, "bold"), text_color="#F3F4F6"
-        ).pack(pady=15)
-
-        frame_filtros = ctk.CTkFrame(frame, fg_color="#0B0F19", border_width=1, border_color="#1E293B")
-        frame_filtros.pack(fill="x", padx=20, pady=5)
-
-        ctk.CTkLabel(
-            frame_filtros, text="📅 Elige el Día para Consultar:",
-            text_color="#06B6D4", font=("Segoe UI", 12, "bold")
-        ).grid(row=0, column=0, padx=15, pady=15, sticky="w")
-
-        frame_fecha_inputs = ctk.CTkFrame(frame_filtros, fg_color="#0B0F19")
-        frame_fecha_inputs.grid(row=0, column=1, padx=5, pady=15, sticky="w")
-
-        self.combo_dgt_dia = ctk.CTkComboBox(
-            frame_fecha_inputs, values=[str(i).zfill(2) for i in range(1, 32)], width=65
-        )
-        self.combo_dgt_dia.set(datetime.now().strftime("%d"))
-        self.combo_dgt_dia.pack(side="left", padx=2)
-
-        meses_es = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-                    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-        self.combo_dgt_mes = ctk.CTkComboBox(frame_fecha_inputs, values=meses_es, width=120)
-        self.combo_dgt_mes.set(meses_es[datetime.now().month - 1])
-        self.combo_dgt_mes.pack(side="left", padx=2)
-
-        self.combo_dgt_anio = ctk.CTkComboBox(frame_fecha_inputs, values=["2025", "2026", "2027", "2028"], width=80)
-        self.combo_dgt_anio.set(str(datetime.now().year))
-        self.combo_dgt_anio.pack(side="left", padx=2)
-
-        ctk.CTkButton(
-            frame_filtros, text="🔍 Buscar Restricciones",
-            fg_color="#06B6D4", text_color="#0B0F19",
-            font=("Segoe UI", 12, "bold"),
-            command=self.evaluar_restricciones_dgt_automaticas
-        ).grid(row=0, column=2, padx=25, pady=15)
-
-        self.txt_resultado_dgt = ctk.CTkTextbox(frame, font=("Consolas", 12))
-        self.txt_resultado_dgt.pack(fill="both", expand=True, padx=20, pady=15)
-        self.txt_resultado_dgt.insert("0.0", "Selecciona una fecha y presiona el botón para auditar las restricciones DGT...")
-        self.txt_resultado_dgt.configure(state="disabled")
-
-    def evaluar_restricciones_dgt_automaticas(self):
-        tipo_v = self.switch_vehiculo.get()
-        dia = self.combo_dgt_dia.get()
-        mes = self.combo_dgt_mes.get()
-        anio = self.combo_dgt_anio.get()
-
-        # CORREGIDO: entry_ancho/longitud/masa pueden no existir si la vista especial no se renderizó
-        ancho = self.entry_ancho.get() if hasattr(self, 'entry_ancho') else "N/A"
-        longitud = self.entry_longitud.get() if hasattr(self, 'entry_longitud') else "N/A"
-        peso = self.entry_masa.get() if hasattr(self, 'entry_masa') else "N/A"
-
-        prompt = (
-            f"Actúa como inspector de tráfico de la DGT de España. "
-            f"Determina técnicamente las restricciones de circulación aplicables el: '{dia} de {mes} de {anio}'.\n"
-            f"Identifica qué día de la semana es, si hay festividades o periodos de alta ocupación.\n\n"
-            f"■ VEHÍCULO:\n- Categoría: {tipo_v}\n"
-        )
-        if tipo_v == "TRANSPORTE ESPECIAL":
-            prompt += f"- Convoy: Ancho {ancho}m, Longitud {longitud}m, Masa {peso}t.\n"
-
-        prompt += (
-            "\nResponde con este esquema:\n"
-            "1. 🚦 ¿CIRCULACIÓN PERMITIDA? (Respuesta directa: Habilitado / Prohibido / Condicionado)\n"
-            "2. ⏱️ HORARIOS DE RESTRICCIÓN: Franjas horarias exactas.\n"
-            "3. 🗺️ TRAMOS AFECTADOS: Red RIMP o puntos conflictivos.\n"
-            "4. 📦 EXCEPCIONES Y MERCANCÍAS EXENTAS."
-        )
-        self.consulting_gemini_stream_hilo(prompt, self.txt_resultado_dgt)
-
-    # ==========================================
-    # 6. SANCIONES LOTT
-    # ==========================================
-    def setup_vista_lott(self):
-        frame = self.vistas["Sanciones LOTT"]
-        ctk.CTkLabel(
-            frame,
-            text="🔍 AUDITORÍA DE INFRACCIONES LOTT (Baremo de Sanciones)",
-            font=("Segoe UI", 15, "bold"), text_color="#F3F4F6"
-        ).pack(pady=15)
-
-        frame_busqueda = ctk.CTkFrame(frame, fg_color="#0B0F19")
-        frame_busqueda.pack(fill="x", padx=20, pady=5)
-
-        self.combo_lott = ctk.CTkComboBox(frame_busqueda, values=[
-            "Exceso de tiempos de conducción (>20%) - MUY GRAVE",
-            "Falta de hojas de registro o datos del tacógrafo - MUY GRAVE",
-            "Minoración de descansos diarios (>50%) - MUY GRAVE",
-            "Carecer de tarjeta de tacógrafo en cabina - MUY GRAVE",
-            "Exceso de peso entre 15% y 25% - GRAVE",
-            "No pasar inspección periódica del tacógrafo - GRAVE",
-            "Exceso de velocidad entre 10% y 20% - GRAVE",
-            "Carecer de certificado de conductor de país tercero - MUY GRAVE",
-        ], width=500)
-        self.combo_lott.pack(side="left", padx=5)
-
-        ctk.CTkButton(
-            frame_busqueda, text="⚖️ Baremar Infracción",
-            fg_color="#06B6D4", text_color="#0B0F19",
-            font=("Segoe UI", 12, "bold"),
-            command=self.analizar_sancion_lott
-        ).pack(side="left", padx=5)
-
-        self.txt_lott_resultado = ctk.CTkTextbox(frame, font=("Segoe UI", 12))
-        self.txt_lott_resultado.pack(fill="both", expand=True, padx=20, pady=15)
-        self.txt_lott_resultado.insert("0.0", "Selecciona una infracción para calcular cuantía e inhabilitación...")
-        self.txt_lott_resultado.configure(state="disabled")
-
-    def analizar_sancion_lott(self):
-        seleccion = self.combo_lott.get()
-        prompt = (
-            f"Analiza detalladamente bajo la LOTT española (Ley 16/1987) el supuesto: '{seleccion}'.\n"
-            f"Responde con este esquema:\n"
-            f"1. Clasificación de gravedad (Leve / Grave / Muy Grave).\n"
-            f"2. Cuantía exacta de la sanción económica (€) según baremo actual.\n"
-            f"3. Afectación a la pérdida de honorabilidad empresarial.\n"
-            f"4. Artículo específico de la LOTT infringido.\n"
-            f"5. Posibilidades de reducción por pronto pago o conformidad."
-        )
-        self.consulting_gemini_stream_hilo(prompt, self.txt_lott_resultado)
-
-    # ==========================================
-    # 7. NORMATIVA UE
-    # ==========================================
-    def setup_vista_normativa_ue(self):
-        frame = self.vistas["Buscador Normativa UE"]
-        ctk.CTkLabel(
-            frame,
-            text="🇪🇺 CONSULTA DIGITAL DE REGLAMENTOS COMUNITARIOS (UE)",
-            font=("Segoe UI", 15, "bold"), text_color="#F3F4F6"
-        ).pack(pady=15)
-
-        frame_top = ctk.CTkFrame(frame, fg_color="#0B0F19")
-        frame_top.pack(fill="x", padx=20, pady=5)
-
-        self.entry_normativa = ctk.CTkEntry(
-            frame_top,
-            placeholder_text="Ej: Reglamento 561/2006, conducción bisemanal, ADR...",
-            width=500
-        )
-        self.entry_normativa.pack(side="left", fill="x", expand=True, padx=5)
-        self.entry_normativa.bind("<Return>", lambda e: self.buscar_normativa_ue())
-
-        ctk.CTkButton(
-            frame_top, text="🔍 Buscar Regulación",
-            fg_color="#06B6D4", text_color="#0B0F19",
-            font=("Segoe UI", 12, "bold"),
-            command=self.buscar_normativa_ue
-        ).pack(side="right", padx=5)
-
-        self.txt_normativa_resultado = ctk.CTkTextbox(frame, font=("Segoe UI", 12))
-        self.txt_normativa_resultado.pack(fill="both", expand=True, padx=20, pady=15)
-        self.txt_normativa_resultado.insert("0.0", "Introduce un reglamento europeo para obtener su resumen...")
-        self.txt_normativa_resultado.configure(state="disabled")
-
-    def buscar_normativa_ue(self):
-        busqueda = self.entry_normativa.get().strip()
-        if not busqueda:
-            return
-        prompt = (
-            f"Explica de forma directa el contenido regulatorio del siguiente concepto europeo de transporte: '{busqueda}'.\n"
-            f"Incluye: tiempos máximos, excepciones vigentes, obligaciones en cabina y sanciones típicas."
-        )
-        self.consulting_gemini_stream_hilo(prompt, self.txt_normativa_resultado)
-
-    # ==========================================
-    # 8. ZBE RESTRICCIONES
-    # ==========================================
-    def setup_vista_zbe(self):
-        frame = self.vistas["ZBE Restricciones"]
-        ctk.CTkLabel(
-            frame,
-            text="🛑 RESTRICCIONES URBANAS Y ZONAS DE BAJAS EMISIONES (ZBE)",
-            font=("Segoe UI", 15, "bold"), text_color="#F3F4F6"
-        ).pack(pady=15)
-
-        frame_top = ctk.CTkFrame(frame, fg_color="#0B0F19")
-        frame_top.pack(fill="x", padx=20, pady=5)
-
-        self.combo_ciudad = ctk.CTkComboBox(frame_top, values=[
-            "Madrid (Distrito Centro / ZBE)",
-            "Barcelona (ZBE Rondas)",
-            "Valencia",
-            "Sevilla",
-            "Zaragoza",
-            "Bilbao",
-            "Málaga",
-            "Valladolid"
-        ], width=250)
-        self.combo_ciudad.pack(side="left", padx=5)
-
-        self.combo_distintivo = ctk.CTkComboBox(frame_top, values=[
-            "Sin Distintivo (contaminante)",
-            "Etiqueta B",
-            "Etiqueta C",
-            "ECO",
-            "CERO Emisiones"
-        ], width=200)
-        self.combo_distintivo.pack(side="left", padx=5)
-
-        ctk.CTkButton(
-            frame_top, text="🚫 Verificar Acceso",
-            fg_color="#06B6D4", text_color="#0B0F19",
-            font=("Segoe UI", 12, "bold"),
-            command=self.verificar_zbe
-        ).pack(side="left", padx=5)
-
-        self.txt_zbe_resultado = ctk.CTkTextbox(frame, font=("Segoe UI", 12))
-        self.txt_zbe_resultado.pack(fill="both", expand=True, padx=20, pady=15)
-        self.txt_zbe_resultado.insert("0.0", "Selecciona ciudad y distintivo para verificar el acceso...")
-        self.txt_zbe_resultado.configure(state="disabled")
-
-    def verificar_zbe(self):
-        ciudad = self.combo_ciudad.get()
-        etiqueta = self.combo_distintivo.get()
-        prompt = (
-            f"Determina el acceso de un vehículo de transporte pesado con distintivo ambiental '{etiqueta}' "
-            f"a la ZBE de {ciudad}.\n"
-            f"Indica: si está permitido el acceso, moratorias activas, restricciones por tonelaje, "
-            f"horarios de carga/descarga y multas aplicables."
-        )
-        self.consulting_gemini_stream_hilo(prompt, self.txt_zbe_resultado)
-
-    # ==========================================
-    # 9. RECURSOS DE SANCIONES
-    # ==========================================
-    def setup_vista_recursos(self):
-        frame = self.vistas["Recursos de Sanciones"]
-        ctk.CTkLabel(
-            frame,
-            text="📑 GENERADOR DE ALEGACIONES Y RECURSOS ADMINISTRATIVOS",
-            font=("Segoe UI", 15, "bold"), text_color="#F3F4F6"
-        ).pack(pady=15)
-
-        frame_inputs = ctk.CTkFrame(frame, fg_color="#0B0F19")
-        frame_inputs.pack(fill="x", padx=20, pady=5)
-
-        ctk.CTkLabel(frame_inputs, text="Hecho Impugnado:", text_color="#06B6D4").grid(
-            row=0, column=0, padx=10, pady=8, sticky="w"
-        )
-        self.entry_hecho_recurso = ctk.CTkEntry(
-            frame_inputs,
-            placeholder_text="Ej: Multa por exceso de conducción sin pausa registrada",
-            width=450
-        )
-        self.entry_hecho_recurso.grid(row=0, column=1, padx=10, pady=8)
-
-        ctk.CTkLabel(frame_inputs, text="Defecto / Causa:", text_color="#06B6D4").grid(
-            row=1, column=0, padx=10, pady=8, sticky="w"
-        )
-        self.entry_causa_recurso = ctk.CTkEntry(
-            frame_inputs,
-            placeholder_text="Ej: Causa de fuerza mayor justificada / fallo del tacógrafo",
-            width=450
-        )
-        self.entry_causa_recurso.grid(row=1, column=1, padx=10, pady=8)
-
-        ctk.CTkButton(
-            frame, text="📄 Redactar Borrador de Pliego de Descargo",
-            fg_color="#10B981", text_color="#0B0F19",
-            font=("Segoe UI", 12, "bold"),
-            command=self.generar_pliego_descargo
-        ).pack(pady=10)
-
-        self.txt_recurso_resultado = ctk.CTkTextbox(frame, font=("Segoe UI", 12))
-        self.txt_recurso_resultado.pack(fill="both", expand=True, padx=20, pady=10)
-        self.txt_recurso_resultado.insert("0.0", "Introduce los datos para generar una plantilla formal de descargo...")
-        self.txt_recurso_resultado.configure(state="disabled")
-
-    def generar_pliego_descargo(self):
-        hecho = self.entry_hecho_recurso.get().strip()
-        causa = self.entry_causa_recurso.get().strip()
-        if not hecho:
-            return
-        prompt = (
-            f"Actúa como abogado experto en derecho del transporte por carretera en España.\n"
-            f"Redacta una plantilla concisa de Pliego de Descargo para:\n"
-            f"- Hecho denunciado: {hecho}\n"
-            f"- Motivo de defensa: {causa if causa else 'A desarrollar por el interesado'}\n\n"
-            f"Estructura: Encabezado (a la Inspección de Transportes) → Hechos → Alegaciones jurídicas → Suplico.\n"
-            f"Tono formal. Sin rodeos. Máximo 400 palabras."
-        )
-        self.consulting_gemini_stream_hilo(prompt, self.txt_recurso_resultado)
-
-    # ==========================================
-    # 10. ASISTENTE IA
-    # ==========================================
-    def setup_vista_ia(self):
-        frame = self.vistas["Asistente Transporte"]
-        ctk.CTkLabel(
-            frame,
-            text="🤖 ASISTENTE LOGÍSTICO Y CONSULTOR COGNITIVO GEMINI",
-            font=("Segoe UI", 15, "bold"), text_color="#F3F4F6"
-        ).pack(pady=15)
-
-        frame_input = ctk.CTkFrame(frame, fg_color="#0B0F19")
-        frame_input.pack(fill="x", padx=20, pady=5)
-
-        self.entry_ia_prompt = ctk.CTkEntry(
-            frame_input,
-            placeholder_text="Haz una pregunta técnica sobre tacógrafos, normativa o rutas..."
-        )
-        self.entry_ia_prompt.pack(side="left", fill="x", expand=True, padx=5)
-        self.entry_ia_prompt.bind("<Return>", lambda e: self.preguntar_asistente_ia())
-
-        ctk.CTkButton(
-            frame_input, text="🧠 Preguntar",
-            fg_color="#06B6D4", text_color="#0B0F19",
-            font=("Segoe UI", 12, "bold"),
-            command=self.preguntar_asistente_ia
-        ).pack(side="right", padx=5)
-
-        self.txt_ia_resultado = ctk.CTkTextbox(frame, font=("Segoe UI", 12))
-        self.txt_ia_resultado.pack(fill="both", expand=True, padx=20, pady=15)
-        self.txt_ia_resultado.insert("0.0", "Escribe tu consulta y obtén respuesta inmediata en cabina.")
-        self.txt_ia_resultado.configure(state="disabled")
-
-    def preguntar_asistente_ia(self):
-        prompt_usuario = self.entry_ia_prompt.get().strip()
-        if not prompt_usuario:
-            return
-        prompt_sistema = (
-            f"Actúas como copiloto experto en transporte por carretera europeo. "
-            f"Responde de forma directa, clara y técnica a la duda del conductor:\n\n'{prompt_usuario}'"
-        )
-        self.consulting_gemini_stream_hilo(prompt_sistema, self.txt_ia_resultado)
-
-    # ==========================================
-    # 11. AUDITOR DE TIQUE
-    # ==========================================
-    def setup_vista_vision(self):
-        frame = self.vistas["Visualización de Tique"]
-        ctk.CTkLabel(
-            frame,
-            text="📸 AUDITORÍA ÓPTICA AUTOMATIZADA DE TIQUES DE TACÓGRAFO",
-            font=("Segoe UI", 15, "bold"), text_color="#F3F4F6"
-        ).pack(pady=15)
-
-        frame_top = ctk.CTkFrame(frame, fg_color="#0B0F19")
-        frame_top.pack(fill="x", padx=20, pady=5)
-
-        ctk.CTkButton(
-            frame_top, text="📂 Seleccionar Imagen / Archivo",
-            fg_color="#1E3A8A", text_color="#06B6D4",
-            font=("Segoe UI", 12, "bold"),
-            command=self.cargar_imagen_tique
-        ).pack(side="left", padx=5)
-
-        self.lbl_ruta_archivo = ctk.CTkLabel(frame_top, text="Ningún archivo cargado", text_color="#64748B")
-        self.lbl_ruta_archivo.pack(side="left", padx=10)
-
-        ctk.CTkButton(
-            frame, text="⚡ Ejecutar Análisis OCR Estructural",
-            fg_color="#06B6D4", text_color="#0B0F19",
-            font=("Segoe UI", 12, "bold"),
-            command=self.analizar_tique_ocr
-        ).pack(pady=10)
-
-        self.txt_vision_resultado = ctk.CTkTextbox(frame, font=("Segoe UI", 12))
-        self.txt_vision_resultado.pack(fill="both", expand=True, padx=20, pady=15)
-        self.txt_vision_resultado.insert("0.0", "Carga una fotografía del tique para extraer bloques de actividad...")
-        self.txt_vision_resultado.configure(state="disabled")
-
-    def cargar_imagen_tique(self):
-        """CORREGIDO: nombre del método simplificado."""
-        archivo = filedialog.askopenfilename(
-            filetypes=[("Imágenes", "*.png *.jpg *.jpeg *.bmp *.webp"), ("Todos", "*.*")]
-        )
-        if archivo:
-            self.ruta_imagen_tique = archivo
-            self.lbl_ruta_archivo.configure(
-                text=os.path.basename(archivo), text_color="#F3F4F6"
-            )
-
-    def analizar_tique_ocr(self):
-        if not self.ruta_imagen_tique or not os.path.exists(self.ruta_imagen_tique):
-            self._actualizar_caja_texto(
-                self.txt_vision_resultado,
-                "❌ Por favor, carga un archivo de imagen válido primero."
-            )
-            return
-
-        if not LIBS_DISPONIBLES:
-            self._actualizar_caja_texto(
-                self.txt_vision_resultado,
-                "❌ Librería google-genai no disponible.\nInstala: pip install google-genai"
-            )
-            return
-
-        self._actualizar_caja_texto(self.txt_vision_resultado, "⚡ Conectando con servidor de visión artificial...\n")
-
-        def task():
-            if not self.ai_client:
-                self.after(0, lambda: self._actualizar_caja_texto(
-                    self.txt_vision_resultado,
-                    "❌ Error: Cliente Gemini no configurado. Verifica tu API Key."
-                ))
-                return
-            try:
-                imagen_pil = Image.open(self.ruta_imagen_tique)
-
-                prompt_vision = (
-                    "Analiza esta imagen de tique de tacógrafo digital. "
-                    "Genera un informe directo, sin saludos ni introducciones. "
-                    "Usa frases breves y completas con esta estructura exacta:\n\n"
-                    "🔍 DETECCIONES CLAVE:\n"
-                    "- [Dato detectado de forma ultra-breve]\n\n"
-                    "⚖️ INFRACCIONES IDENTIFICADAS:\n"
-                    "- [Infracción concreta o indica 'Ninguna detectada']\n\n"
-                    "💡 ACCIÓN RECOMENDADA:\n"
-                    "- [Consejo directo de 1 frase para el conductor]."
-                )
-
-                response_stream = self.ai_client.models.generate_content_stream(
-                    model='gemini-2.5-flash',
-                    contents=[imagen_pil, prompt_vision],
-                    config=types.GenerateContentConfig(
-                        max_output_tokens=1500,
-                        temperature=0.1
-                    )
-                )
-
-                self.after(0, lambda: self._actualizar_caja_texto(
-                    self.txt_vision_resultado, "⚡ Transmitiendo veredicto del tique:\n\n"
-                ))
-
-                for chunk in response_stream:
-                    if chunk.text:
-                        self.after(0, lambda t=chunk.text: self._anadir_texto_widget(self.txt_vision_resultado, t))
-
-            except Exception as e:
-                error_msg = str(e)
-                if "429" in error_msg or "quota" in error_msg.lower() or "exhausted" in error_msg.lower():
-                    mensaje = "❌ [Error 429] Límite de peticiones superado. Espera 1 minuto."
-                elif "503" in error_msg or "high demand" in error_msg.lower():
-                    mensaje = "❌ [Error 503] Servidor saturado. Reintenta en unos segundos."
-                else:
-                    mensaje = f"❌ Error en análisis: {error_msg}"
-                self.after(0, lambda m=mensaje: self._actualizar_caja_texto(self.txt_vision_resultado, m))
-
-        threading.Thread(target=task, daemon=True).start()
-
-
-# ==========================================
-# PUNTO DE ENTRADA
-# ==========================================
-if __name__ == "__main__":
-    app = AppTacografo()
-    app.mainloop()
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0B0F19">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Copiloto Transporte">
+<meta name="description" content="Copiloto Inteligente de Transporte v2.8 - Tacógrafo, GPS, DGT, IA">
+<title>Copiloto Transporte v2.8</title>
+
+<style>
+  :root {
+    --bg:       #0B0F19;
+    --sidebar:  #0F172A;
+    --card:     #111827;
+    --border:   #1E293B;
+    --cyan:     #06B6D4;
+    --cyan2:    #38BDF8;
+    --blue:     #1E3A8A;
+    --green:    #10B981;
+    --amber:    #F59E0B;
+    --red:      #EF4444;
+    --text:     #F3F4F6;
+    --muted:    #94A3B8;
+    --dim:      #64748B;
+    --radius:   12px;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  /* ── APP SHELL ── */
+  #app { display: flex; flex-direction: column; height: 100dvh; }
+
+  /* ── TOPBAR ── */
+  #topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--sidebar);
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    padding-top: max(12px, env(safe-area-inset-top));
+  }
+  #topbar .logo { font-size: 14px; font-weight: 800; color: var(--cyan); letter-spacing: 1px; }
+  #topbar .subtitle { font-size: 10px; color: var(--dim); margin-top: 2px; }
+  #menu-toggle {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; cursor: pointer; color: var(--cyan);
+    font-size: 18px; line-height: 1;
+  }
+
+  /* ── MAIN LAYOUT ── */
+  #main { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── SIDEBAR ── */
+  #sidebar {
+    width: 260px; background: var(--sidebar);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    transition: transform 0.3s ease;
+    z-index: 100; flex-shrink: 0;
+    overflow-y: auto;
+  }
+  #sidebar.hidden { transform: translateX(-100%); position: absolute; height: calc(100% - 60px); }
+  #sidebar .menu-label {
+    font-size: 10px; font-weight: 700; color: var(--dim);
+    padding: 14px 16px 6px; letter-spacing: 1px;
+  }
+  .menu-btn {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 16px; cursor: pointer;
+    font-size: 13px; font-weight: 600; color: #E2E8F0;
+    border: none; background: none; width: 100%; text-align: left;
+    border-radius: 8px; margin: 1px 8px; width: calc(100% - 16px);
+    transition: background 0.15s, color 0.15s;
+  }
+  .menu-btn:hover, .menu-btn.active {
+    background: var(--blue); color: var(--cyan);
+  }
+  #sidebar .autor {
+    margin-top: auto; padding: 16px;
+    font-size: 11px; font-style: italic; color: var(--cyan);
+    border-top: 1px solid var(--border);
+  }
+
+  /* ── CONTENT ── */
+  #content {
+    flex: 1; overflow-y: auto; overflow-x: hidden;
+    padding: 16px; padding-bottom: calc(16px + var(--safe-bottom));
+  }
+
+  /* ── OVERLAY (sidebar mobile) ── */
+  #overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6); z-index: 99;
+  }
+  #overlay.show { display: block; }
+
+  /* ── SECTIONS ── */
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; margin-bottom: 14px;
+  }
+  .card-title {
+    font-size: 11px; font-weight: 700; color: var(--dim);
+    letter-spacing: 1px; margin-bottom: 12px; text-transform: uppercase;
+  }
+
+  /* ── PAGE TITLE ── */
+  .page-title {
+    font-size: 15px; font-weight: 800; color: var(--text);
+    margin-bottom: 16px; line-height: 1.3;
+  }
+
+  /* ── INSTRUMENT PANEL ── */
+  #instrument-panel {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    margin-bottom: 14px;
+  }
+  .instrument {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px; text-align: center;
+  }
+  .instrument .val {
+    font-size: 22px; font-weight: 800; font-family: 'Courier New', monospace;
+    color: var(--cyan);
+  }
+  .instrument .lbl { font-size: 10px; color: var(--dim); margin-top: 4px; }
+  .instrument .sub { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  /* STATUS LED */
+  .status-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px; background: var(--card);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    margin-bottom: 14px;
+  }
+  .led {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--green); flex-shrink: 0;
+    box-shadow: 0 0 8px currentColor;
+  }
+  .led.amber { background: var(--amber); }
+  .led.red { background: var(--red); }
+  .status-txt { font-size: 13px; font-weight: 700; }
+
+  /* VEHICLE SELECTOR */
+  .seg-btn-group {
+    display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap;
+  }
+  .seg-btn {
+    flex: 1; min-width: 90px; padding: 9px 6px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card); color: var(--muted);
+    font-size: 12px; font-weight: 700; cursor: pointer;
+    transition: all 0.15s; text-align: center;
+  }
+  .seg-btn.active { background: var(--cyan); color: var(--bg); border-color: var(--cyan); }
+
+  /* PROGRESS BAR */
+  .progress-wrap { margin: 10px 0; }
+  .progress-label {
+    display: flex; justify-content: space-between;
+    font-size: 11px; color: var(--muted); margin-bottom: 6px;
+  }
+  .progress-bar {
+    height: 10px; background: var(--border); border-radius: 6px; overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%; border-radius: 6px;
+    background: var(--green); transition: width 0.5s, background 0.5s;
+    width: 0%;
+  }
+
+  /* ── CRONÓMETRO ── */
+  #crono-display {
+    font-size: 52px; font-weight: 900; font-family: 'Courier New', monospace;
+    color: var(--cyan); text-align: center; letter-spacing: 4px;
+    padding: 20px 0; transition: color 0.3s;
+  }
+  #crono-estado {
+    text-align: center; font-size: 14px; font-weight: 700;
+    color: var(--amber); margin-bottom: 14px;
+  }
+  #crono-info {
+    text-align: center; font-size: 12px; color: var(--muted); margin-bottom: 16px;
+  }
+  .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .btn {
+    padding: 12px 10px; border: none; border-radius: 10px;
+    font-size: 13px; font-weight: 700; cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .btn:active { transform: scale(0.96); opacity: 0.85; }
+  .btn-green { background: var(--green); color: var(--bg); }
+  .btn-amber { background: var(--amber); color: var(--bg); }
+  .btn-blue  { background: #3B82F6; color: #fff; }
+  .btn-red   { background: var(--red); color: #fff; }
+  .btn-cyan  { background: var(--cyan); color: var(--bg); }
+  .btn-full  { grid-column: 1 / -1; }
+
+  /* ── FORM ELEMENTS ── */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group label { font-size: 11px; font-weight: 600; color: var(--cyan2); }
+  .form-input {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px;
+    color: var(--text); font-size: 14px; outline: none;
+    transition: border-color 0.15s;
+  }
+  .form-input:focus { border-color: var(--cyan); }
+  .form-select {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px;
+    color: var(--text); font-size: 13px; outline: none; width: 100%;
+    appearance: none; cursor: pointer;
+  }
+  .select-wrap { position: relative; }
+  .select-wrap::after {
+    content: '▾'; position: absolute; right: 12px; top: 50%;
+    transform: translateY(-50%); color: var(--cyan); pointer-events: none;
+  }
+
+  /* ── RESULT TEXTBOX ── */
+  .result-box {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px;
+    font-size: 13px; color: var(--text); line-height: 1.6;
+    min-height: 180px; white-space: pre-wrap; word-break: break-word;
+    max-height: 45vh; overflow-y: auto;
+  }
+  .result-box.streaming { border-color: var(--cyan); }
+
+  /* ── API KEY MODAL ── */
+  #modal-apikey {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.85); z-index: 999;
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  #modal-apikey.show { display: flex; }
+  .modal-box {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 24px; width: 100%; max-width: 400px;
+  }
+  .modal-box h2 { font-size: 16px; color: var(--cyan); margin-bottom: 8px; }
+  .modal-box p { font-size: 12px; color: var(--muted); margin-bottom: 16px; line-height: 1.5; }
+
+  /* ── GPS MAP PLACEHOLDER ── */
+  #map-container {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); height: 280px;
+    display: flex; flex-direction: column;
+    overflow: hidden; margin-bottom: 14px;
+    position: relative;
+  }
+  #map-iframe { width: 100%; height: 100%; border: none; border-radius: var(--radius); }
+  .map-overlay-btn {
+    position: absolute; bottom: 10px; right: 10px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .map-fab {
+    background: var(--cyan); color: var(--bg);
+    border: none; border-radius: 50%;
+    width: 40px; height: 40px; font-size: 18px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  }
+
+  /* ── ROUTE RESULT ── */
+  .route-info {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px; margin-bottom: 14px;
+  }
+  .route-stat {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 0; border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .route-stat:last-child { border-bottom: none; }
+  .route-stat .val { color: var(--cyan); font-weight: 700; }
+
+  /* BADGE */
+  .badge {
+    display: inline-block; padding: 3px 8px; border-radius: 6px;
+    font-size: 11px; font-weight: 700; margin-left: 6px;
+  }
+  .badge-red { background: rgba(239,68,68,0.2); color: var(--red); }
+  .badge-green { background: rgba(16,185,129,0.2); color: var(--green); }
+  .badge-amber { background: rgba(245,158,11,0.2); color: var(--amber); }
+
+  /* NORMATIVA INFO BOX */
+  .norm-box {
+    background: var(--bg); border-left: 3px solid var(--cyan);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 14px; font-size: 13px; line-height: 1.7;
+    color: var(--text); margin-bottom: 14px;
+  }
+
+  /* RESPONSIVE — desktop muestra sidebar fijo */
+  @media (min-width: 768px) {
+    #menu-toggle { display: none; }
+    #sidebar { transform: none !important; position: relative; }
+    #overlay { display: none !important; }
+  }
+  @media (max-width: 767px) {
+    #sidebar { position: absolute; top: 0; left: 0; height: 100%; }
+    #sidebar:not(.hidden) { box-shadow: 4px 0 20px rgba(0,0,0,0.5); }
+  }
+
+  /* STREAMING CURSOR */
+  .cursor::after {
+    content: '▌'; color: var(--cyan); animation: blink 1s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* GALIBO ALERT */
+  .galibo-alert {
+    background: rgba(239,68,68,0.1); border: 1px solid var(--red);
+    border-radius: 8px; padding: 10px 12px; margin-top: 8px;
+    font-size: 12px; color: var(--red);
+  }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<div id="modal-apikey">
+  <div class="modal-box">
+    <h2>🔑 Configuración Inicial</h2>
+    <p>Introduce tu clave de Google Gemini API para activar el asistente IA, las restricciones DGT y el análisis de tiques.<br><br>
+    Se guardará localmente en este dispositivo.</p>
+    <div class="form-group" style="margin-bottom:14px">
+      <label>API KEY</label>
+      <input type="password" id="input-apikey" class="form-input" placeholder="Pega tu API Key aquí...">
+    </div>
+    <button class="btn btn-cyan btn-full" onclick="guardarApiKey()">Guardar y Conectar</button>
+    <p style="margin-top:10px;font-size:11px;color:var(--dim)">
+      Obtén tu clave gratis en <a href="https://aistudio.google.com" target="_blank" style="color:var(--cyan)">aistudio.google.com</a>
+    </p>
+  </div>
+</div>
+
+<div id="app">
+
+  <div id="topbar">
+    <div>
+      <div class="logo">⚡ MAGNAPHONE V2.8</div>
+      <div class="subtitle">Copiloto Inteligente de Transporte</div>
+    </div>
+    <button id="menu-toggle" onclick="toggleSidebar()">☰</button>
+  </div>
+
+  <div id="main">
+    <div id="overlay" onclick="closeSidebar()"></div>
+
+    <nav id="sidebar" class="hidden">
+      <div class="menu-label">MÓDULOS DE CONTROL</div>
+      <button class="menu-btn active" onclick="showSection('tacografo')">🚛 Tacógrafo</button>
+      <button class="menu-btn" onclick="showSection('cronometro')">⏱️ Cronómetro en Ruta</button>
+      <button class="menu-btn" onclick="showSection('especial')">⚠️ Transporte Especial</button>
+      <button class="menu-btn" onclick="showSection('gps')">🗺️ Satélite & Gálibos</button>
+      <button class="menu-btn" onclick="showSection('dgt')">🛑 Restricciones DGT</button>
+      <button class="menu-btn" onclick="showSection('lott')">⚖️ Sanciones LOTT</button>
+      <button class="menu-btn" onclick="showSection('normativa')">🇪🇺 Normativa UE</button>
+      <button class="menu-btn" onclick="showSection('zbe')">🏙️ Restricciones ZBE</button>
+      <button class="menu-btn" onclick="showSection('recursos')">📑 Recursos de Sanciones</button>
+      <button class="menu-btn" onclick="showSection('asistente')">🤖 Pregúntame</button>
+      <button class="menu-btn" onclick="showSection('tique')">📸 Auditar Tique</button>
+      <button class="menu-btn" onclick="showSection('config')" style="margin-top:auto">⚙️ Configuración</button>
+      <div class="autor">por Javier Rabe</div>
+    </nav>
+
+    <div id="content">
+
+      <div id="sec-tacografo" class="section active">
+        <div class="page-title">🚛 SISTEMA DE TACÓGRAFO INTELIGENTE</div>
+
+        <div class="seg-btn-group" id="vehiculo-selector">
+          <button class="seg-btn active" onclick="setVehiculo('CAMIÓN', this)">🚛 CAMIÓN</button>
+          <button class="seg-btn" onclick="setVehiculo('AUTOBÚS', this)">🚌 AUTOBÚS</button>
+          <button class="seg-btn" onclick="setVehiculo('ESPECIAL', this)">⚠️ ESPECIAL</button>
+        </div>
+
+        <div id="instrument-panel">
+          <div class="instrument">
+            <div class="val" id="taco-continua">00:00</div>
+            <div class="lbl">Conducción continua</div>
+            <div class="sub">Máx. 4h 30m</div>
+          </div>
+          <div class="instrument">
+            <div class="val" id="taco-diaria">00:00</div>
+            <div class="lbl">Conducción diaria</div>
+            <div class="sub">Máx. 9h</div>
+          </div>
+        </div>
+
+        <div class="status-row">
+          <div class="led" id="taco-led"></div>
+          <div>
+            <div class="status-txt" id="taco-estado-txt">PAUSA / DESCANSO</div>
+            <div style="font-size:11px;color:var(--muted)" id="taco-subestado">Sistema en espera</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">CONSUMO JORNADA DIARIA</div>
+          <div class="progress-wrap">
+            <div class="progress-label">
+              <span>Conducción acumulada</span>
+              <span id="taco-pct">0%</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" id="taco-barra"></div></div>
+            <div style="font-size:11px;color:var(--dim);margin-top:5px">Cuota: 9 horas máximo</div>
+          </div>
+        </div>
+
+        <div class="norm-box" id="norm-text">
+          <strong>■ CONDUCCIÓN CONTINUA:</strong> Máximo 4h 30min. Pausa obligatoria 45 min.<br>
+          <strong>■ FRACCIONAMIENTO:</strong> 15 min + 30 min (en ese orden).<br>
+          <strong>■ CONDUCCIÓN DIARIA:</strong> Máx. 9h (extensible a 10h dos veces/semana).<br>
+          <strong>■ CONTROL:</strong> Registro automático por satélite (tacógrafo digital).
+        </div>
+
+        <div class="card" style="background:rgba(6,182,212,0.05);border-color:var(--cyan)">
+          <div style="font-size:12px;color:var(--cyan2)">
+            🛰️ Enlace GNSS: <strong style="color:var(--green)">Activo</strong>  | 
+            🔒 V.Piloto: <strong style="color:var(--cyan2)">Conectado</strong>  | 
+            🔒 Rutómetro: <strong style="color:var(--cyan2)">Sync</strong>
+          </div>
+        </div>
+      </div>
+
+      <div id="sec-cronometro" class="section">
+        <div class="page-title">⏱️ CRONÓMETRO DE CONDUCCIÓN EN VIVO</div>
+        <div class="card">
+          <div id="crono-estado">ESTADO: PAUSA / DESCANSO</div>
+          <div id="crono-display">00:00:00</div>
+          <div id="crono-info">Tiempo disponible antes de pausa: 4h 30m</div>
+          <div class="progress-wrap">
+            <div class="progress-bar" style="height:12px">
+              <div class="progress-fill" id="crono-barra"></div>
+            </div>
+          </div>
+        </div>
+        <div class="btn-grid">
+          <button class="btn btn-green" onclick="setCronoEstado('conduccion')">🚛 Conducir</button>
+          <button class="btn btn-amber" onclick="setCronoEstado('pausa')">⏸️ Pausa 45min</button>
+          <button class="btn btn-blue"  onclick="setCronoEstado('trabajo')">🛠️ Otros Trabajos</button>
+          <button class="btn btn-red"   onclick="reiniciarCrono()">🔄 Reiniciar</button>
+        </div>
+      </div>
+
+      <div id="sec-especial" class="section">
+        <div class="page-title">⚠️ CALCULADOR DE TRANSPORTE ESPECIAL</div>
+        <div class="card">
+          <div class="card-title">DIMENSIONES DEL CONVOY</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Anchura Total (m)</label>
+              <input type="number" id="esp-ancho" class="form-input" value="3.20" step="0.01">
+            </div>
+            <div class="form-group">
+              <label>Longitud Total (m)</label>
+              <input type="number" id="esp-longitud" class="form-input" value="22.50" step="0.01">
+            </div>
+            <div class="form-group">
+              <label>Masa Conjunto (ton)</label>
+              <input type="number" id="esp-masa" class="form-input" value="55.0" step="0.1">
+            </div>
+            <div class="form-group">
+              <label>Altura Máxima (m)</label>
+              <input type="number" id="esp-altura" class="form-input" value="4.30" step="0.01">
+            </div>
+          </div>
+          <button class="btn btn-cyan btn-full" onclick="calcularEspecial()">🛡️ Auditar Requisitos de Circulación</button>
+        </div>
+        <div class="result-box" id="esp-resultado">Introduce los datos del convoy y pulsa Auditar.</div>
+      </div>
+
+      <div id="sec-gps" class="section">
+        <div class="page-title">🗺️ NAVEGADOR GPS Y DETECCIÓN DE GÁLIBOS</div>
+        <div class="card" style="padding:10px">
+          <div style="display:flex;gap:8px;margin-bottom:10px">
+            <input type="text" id="gps-destino" class="form-input" placeholder="Destino (ciudad o dirección)..." style="flex:1">
+            <button class="btn btn-cyan" style="white-space:nowrap;padding:10px 14px" onclick="calcularRutaGPS()">🛣️ Ruta</button>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-blue" style="flex:1;padding:8px" onclick="abrirGoogleMaps()">📍 Google Maps</button>
+            <button class="btn" style="flex:1;padding:8px;background:var(--border);color:var(--text)" onclick="abrirStreetView()">📷 Street View</button>
+            <button class="btn btn-red" style="flex:1;padding:8px" onclick="reiniciarGPS()">🔄 Reset</button>
+          </div>
+        </div>
+        <div id="map-container">
+          <iframe id="map-iframe" src="about:blank" allowfullscreen></iframe>
+        </div>
+        <div class="result-box" id="gps-resultado" style="min-height:120px">
+          Introduce un destino para trazar la ruta con restricciones para vehículos pesados.
+        </div>
+      </div>
+
+      <div id="sec-dgt" class="section">
+        <div class="page-title">🛑 RESTRICCIONES DGT POR FECHA</div>
+        <div class="card">
+          <div class="card-title">SELECCIONAR FECHA A CONSULTAR</div>
+          <div class="form-grid" style="grid-template-columns:1fr 2fr 1fr">
+            <div class="form-group">
+              <label>Día</label>
+              <input type="number" id="dgt-dia" class="form-input" min="1" max="31" value="">
+            </div>
+            <div class="form-group">
+              <label>Mes</label>
+              <div class="select-wrap">
+                <select id="dgt-mes" class="form-select">
+                  <option>Enero</option><option>Febrero</option><option>Marzo</option>
+                  <option>Abril</option><option>Mayo</option><option>Junio</option>
+                  <option>Julio</option><option>Agosto</option><option>Septiembre</option>
+                  <option>Octubre</option><option>Noviembre</option><option>Diciembre</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Año</label>
+              <input type="number" id="dgt-anio" class="form-input" value="2026">
+            </div>
+          </div>
+          <button class="btn btn-cyan btn-full" onclick="consultarDGT()">🔍 Buscar Restricciones</button>
+        </div>
+        <div class="result-box" id="dgt-resultado">Selecciona una fecha y pulsa Buscar para auditar las restricciones DGT.</div>
+      </div>
+
+      <div id="sec-lott" class="section">
+        <div class="page-title">⚖️ AUDITORÍA DE SANCIONES LOTT</div>
+        <div class="card">
+          <div class="card-title">SELECCIONAR INFRACCIÓN</div>
+          <div class="select-wrap" style="margin-bottom:12px">
+            <select id="lott-combo" class="form-select">
+              <option>Exceso de tiempos de conducción (>20%) - MUY GRAVE</option>
+              <option>Falta de hojas de registro / datos del tacógrafo - MUY GRAVE</option>
+              <option>Minoración de descansos diarios (>50%) - MUY GRAVE</option>
+              <option>Carecer de tarjeta de tacógrafo en cabina - MUY GRAVE</option>
+              <option>Exceso de peso entre 15% y 25% - GRAVE</option>
+              <option>No pasar inspección periódica del tacógrafo - GRAVE</option>
+              <option>Exceso de velocidad entre 10% y 20% - GRAVE</option>
+              <option>Carecer de certificado de conductor de país tercero - MUY GRAVE</option>
+            </select>
+          </div>
+          <button class="btn btn-cyan btn-full" onclick="analizarLOTT()">⚖️ Baremar Infracción</button>
+        </div>
+        <div class="result-box" id="lott-resultado">Selecciona una infracción para calcular cuantía e inhabilitación.</div>
+      </div>
+
+      <div id="sec-normativa" class="section">
+        <div class="page-title">🇪🇺 BUSCADOR DE NORMATIVA EUROPEA</div>
+        <div class="card">
+          <div class="form-group" style="margin-bottom:12px">
+            <label>REGLAMENTO O CONCEPTO</label>
+            <input type="text" id="norm-query" class="form-input" placeholder="Ej: Reglamento 561/2006, ADR, cabotaje...">
+          </div>
+          <button class="btn btn-cyan btn-full" onclick="buscarNormativa()">🔍 Buscar Regulación</button>
+        </div>
+        <div class="result-box" id="norm-resultado">Introduce un reglamento europeo para obtener su resumen.</div>
+      </div>
+
+      <div id="sec-zbe" class="section">
+        <div class="page-title">🏙️ RESTRICCIONES ZBE URBANAS</div>
+        <div class="card">
+          <div class="form-group" style="margin-bottom:10px">
+            <label>CIUDAD / ZONA</label>
+            <div class="select-wrap">
+              <select id="zbe-ciudad" class="form-select">
+                <option>Madrid (Distrito Centro / ZBE)</option>
+                <option>Barcelona (ZBE Rondas)</option>
+                <option>Valencia</option>
+                <option>Sevilla</option>
+                <option>Zaragoza</option>
+                <option>Bilbao</option>
+                <option>Málaga</option>
+                <option>Valladolid</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:14px">
+            <label>DISTINTIVO AMBIENTAL</label>
+            <div class="select-wrap">
+              <select id="zbe-distintivo" class="form-select">
+                <option>Sin Distintivo (contaminante)</option>
+                <option>Etiqueta B</option>
+                <option>Etiqueta C</option>
+                <option>ECO</option>
+                <option>CERO Emisiones</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-cyan btn-full" onclick="verificarZBE()">🚫 Verificar Acceso</button>
+        </div>
+        <div class="result-box" id="zbe-resultado">Selecciona ciudad and distintivo para verificar el acceso.</div>
+      </div>
+
+      <div id="sec-recursos" class="section">
+        <div class="page-title">📑 GENERADOR DE RECURSOS ADMINISTRATIVOS</div>
+        <div class="card">
+          <div class="form-group" style="margin-bottom:10px">
+            <label>HECHO IMPUGNADO</label>
+            <input type="text" id="rec-hecho" class="form-input" placeholder="Ej: Multa por exceso de conducción sin pausa registrada">
+          </div>
+          <div class="form-group" style="margin-bottom:14px">
+            <label>MOTIVO DE DEFENSA</label>
+            <input type="text" id="rec-causa" class="form-input" placeholder="Ej: Causa de fuerza mayor / fallo del tacógrafo">
+          </div>
+          <button class="btn btn-green btn-full" onclick="generarRecurso()">📄 Redactar Pliego de Descargo</button>
+        </div>
+        <div class="result-box" id="rec-resultado">Introduce los datos para generar la plantilla de descargo.</div>
+      </div>
+
+      <div id="sec-asistente" class="section">
+        <div class="page-title">🤖 PREGÚNTAME</div>
+        <div class="card">
+          <div class="form-group" style="margin-bottom:12px">
+            <label>TU CONSULTA</label>
+            <input type="text" id="ia-prompt" class="form-input" placeholder="Haz una pregunta sobre tacógrafos, normativa o rutas...">
+          </div>
+          <button class="btn btn-cyan btn-full" onclick="preguntarIA()">🧠 Pregúntame</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">CONSULTAS RÁPIDAS</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            <button class="btn" style="background:var(--border);color:var(--text);font-size:11px;padding:7px 10px" onclick="preguntaRapida('¿Cuántas horas puedo conducir en una semana?')">Horas semanales</button>
+            <button class="btn" style="background:var(--border);color:var(--text);font-size:11px;padding:7px 10px" onclick="preguntaRapida('¿Qué es el descanso bisemanal?')">Descanso bisemanal</button>
+            <button class="btn" style="background:var(--border);color:var(--text);font-size:11px;padding:7px 10px" onclick="preguntaRapida('¿Cuándo necesito ferry o tren para el descanso?')">Ferry y tren</button>
+            <button class="btn" style="background:var(--border);color:var(--text);font-size:11px;padding:7px 10px" onclick="preguntaRapida('Excepciones al reglamento 561/2006 para transporte nacional')">Excepciones 561</button>
+          </div>
+        </div>
+
+        <div class="result-box" id="ia-resultado">Pregúntame</div>
+      </div>
+
+      <div id="sec-tique" class="section">
+        <div class="page-title">📸 AUDITORÍA DE TIQUES DE TACÓGRAFO</div>
+        <div class="card">
+          <div class="card-title">CARGAR IMAGEN DEL TIQUE</div>
+          <label style="display:block;cursor:pointer">
+            <div id="upload-zone" style="border:2px dashed var(--border);border-radius:10px;padding:30px;text-align:center;color:var(--muted);transition:border-color 0.2s">
+              <div style="font-size:36px;margin-bottom:8px">📷</div>
+              <div style="font-size:13px">Toca para seleccionar imagen</div>
+              <div style="font-size:11px;color:var(--dim);margin-top:4px">JPG, PNG, WEBP, BMP</div>
+            </div>
+            <input type="file" id="tique-file" accept="image/*" style="display:none" onchange="cargarTique(this)">
+          </label>
+          <div id="tique-preview-wrap" style="display:none;margin-top:10px">
+            <img id="tique-preview" style="width:100%;max-height:200px;object-fit:contain;border-radius:8px;background:var(--bg)">
+            <div id="tique-filename" style="font-size:11px;color:var(--dim);margin-top:4px;text-align:center"></div>
+          </div>
+          <button class="btn btn-cyan btn-full" style="margin-top:12px" onclick="analizarTique()">⚡ Ejecutar Análisis OCR</button>
+        </div>
+        <div class="result-box" id="tique-resultado">Carga una fotografía del tique para analizarla.</div>
+      </div>
+
+      <div id="sec-config" class="section">
+        <div class="page-title">⚙️ CONFIGURACIÓN</div>
+        <div class="card">
+          <div class="card-title">GEMINI API KEY</div>
+          <div class="form-group" style="margin-bottom:12px">
+            <label>CLAVE DE ACCESO</label>
+            <input type="password" id="config-apikey" class="form-input" placeholder="Tu API Key de Google Gemini">
+          </div>
+          <button class="btn btn-cyan btn-full" onclick="guardarApiKeyConfig()">💾 Guardar API Key</button>
+          <div id="config-status" style="font-size:12px;color:var(--green);margin-top:8px;display:none">✅ API Key guardada correctamente</div>
+        </div>
+        <div class="card">
+          <div class="card-title">INSTALAR COMO APP (PWA)</div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:12px">
+            Para instalar en Android como si fuera una APK:<br><br>
+            1. Abre este archivo en <strong style="color:var(--cyan)">Chrome</strong><br>
+            2. Pulsa el menú <strong style="color:var(--cyan)">⋮</strong> → <strong style="color:var(--cyan)">"Añadir a pantalla de inicio"</strong><br>
+            3. Acepta y la app aparecerá como icono nativo<br><br>
+            También puedes usar un servidor local con Python:<br>
+            <code style="background:var(--bg);padding:4px 8px;border-radius:4px;color:var(--cyan);font-size:12px">python -m http.server 8080</code>
+          </div>
+          <button id="btn-install" class="btn btn-green btn-full" onclick="instalarPWA()" style="display:none">📲 Instalar App en este dispositivo</button>
+        </div>
+        <div class="card">
+          <div class="card-title">INFORMACIÓN</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.8">
+            <div>Versión: <strong style="color:var(--cyan)">2.8 PWA</strong></div>
+            <div>IA: <strong style="color:var(--cyan)">Google Gemini 2.5 Flash</strong></div>
+            <div>Mapas: <strong style="color:var(--cyan)">OpenStreetMap + OSRM</strong></div>
+            <div>Autor: <strong style="color:var(--cyan)">Javier Rabe</strong></div>
+          </div>
+        </div>
+      </div>
+
+    </div></div></div><script>
+// ============================================================
+// ESTADO GLOBAL
+// ============================================================
+let API_KEY = localStorage.getItem('gemini_api_key') || '';
+let vehiculoActual = 'CAMIÓN';
+
+// Cronómetro
+let cronoInterval = null;
+let cronoBotaActiva = false;
+let cronoEstado = 'pausa'; // 'conduccion' | 'pausa' | 'trabajo'
+let segsConductionActual = 0;
+let segsConductionDiaria = 0;
+let segsPausaRestantes = 2700;
+let avisoPrevio = false;
+let avisoLimite = false;
+let imagenTiqueBase64 = null;
+
+// PWA install
+let deferredPrompt = null;
+
+// ============================================================
+// INIT
+// ============================================================
+window.addEventListener('load', () => {
+  // Fecha actual en DGT
+  const now = new Date();
+  document.getElementById('dgt-dia').value = now.getDate();
+  document.getElementById('dgt-mes').selectedIndex = now.getMonth();
+  document.getElementById('dgt-anio').value = now.getFullYear();
+
+  if (!API_KEY) {
+    document.getElementById('modal-apikey').classList.add('show');
+  } else {
+    document.getElementById('config-apikey').value = API_KEY;
+  }
+
+  // Iniciar loop del cronómetro
+  setInterval(tickCrono, 1000);
+  actualizarPanelTacografo();
+});
+
+// PWA install prompt
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const btn = document.getElementById('btn-install');
+  if (btn) btn.style.display = 'block';
+});
+
+function instalarPWA() {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(() => { deferredPrompt = null; });
+  } else {
+    alert('Para instalar: Chrome → Menú ⋮ → "Añadir a pantalla de inicio"');
+  }
+}
+
+// ============================================================
+// SIDEBAR / NAV
+// ============================================================
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  const ov = document.getElementById('overlay');
+  sb.classList.toggle('hidden');
+  ov.classList.toggle('show');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.add('hidden');
+  document.getElementById('overlay').classList.remove('show');
+   
+}
+function showSection(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById('sec-' + id).classList.add('active');
+  document.querySelectorAll('.menu-btn').forEach(b => b.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  closeSidebar();
+  if (id === 'tacografo') actualizarPanelTacografo();
+  if (id === 'gps') iniciarMapa();
+}
+
+// ============================================================
+// API KEY
+// ============================================================
+function guardarApiKey() {
+  const key = document.getElementById('input-apikey').value.trim();
+  if (key.length > 10) {
+    API_KEY = key;
+    localStorage.setItem('gemini_api_key', key);
+    document.getElementById('config-apikey').value = key;
+    document.getElementById('modal-apikey').classList.remove('show');
+  } else {
+    alert('La API Key parece demasiado corta. Verifica que es correcta.');
+  }
+}
+function guardarApiKeyConfig() {
+  const key = document.getElementById('config-apikey').value.trim();
+  if (key.length > 10) {
+    API_KEY = key;
+    localStorage.setItem('gemini_api_key', key);
+    const st = document.getElementById('config-status');
+    st.style.display = 'block';
+    setTimeout(() => st.style.display = 'none', 3000);
+  }
+}
+
+// ============================================================
+// GEMINI API - STREAMING
+// ============================================================
+async function geminiStream(prompt, targetId, esImagen = false, imagenB64 = null, mimeType = 'image/jpeg') {
+  if (!API_KEY) {
+    document.getElementById(targetId).textContent = '❌ No hay API Key configurada. Ve a ⚙️ Configuración.';
+    return;
+  }
+  const box = document.getElementById(targetId);
+  box.textContent = '⚡ Conectando con Gemini...\n\n';
+  box.classList.add('streaming');
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${API_KEY}`;
+
+  let parts;
+  if (esImagen && imagenB64) {
+    parts = [
+      { inline_data: { mime_type: mimeType, data: imagenB64 } },
+      { text: prompt }
+    ];
+  } else {
+    parts = [{ text: prompt }];
+  }
+
+  const body = {
+    contents: [{ role: 'user', parts }],
+    generationConfig: { maxOutputTokens: 3000, temperature: 0.2 }
+  };
+
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json();
+      const code = err?.error?.code || resp.status;
+      if (code === 429) {
+        box.textContent = '❌ [Error 429] Cuota diaria superada. Espera 1 minuto e intenta de nuevo.';
+      } else if (code === 503) {
+        box.textContent = '❌ [Error 503] Servidor saturado. Reintenta en unos segundos.';
+      } else {
+        box.textContent = `❌ Error ${code}: ${err?.error?.message || 'desconocido'}`;
+      }
+      box.classList.remove('streaming');
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    box.textContent = '';
+    let acum = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (txt) {
+              acum += txt;
+              box.textContent = acum;
+              box.scrollTop = box.scrollHeight;
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch (e) {
+    box.textContent = `❌ Error de red: ${e.message}\nVerifica tu conexión a internet.`;
+  }
+  box.classList.remove('streaming');
+}
+
+// ============================================================
+// 1. TACÓGRAFO
+// ============================================================
+function setVehiculo(tipo, btn) {
+  vehiculoActual = tipo;
+  document.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  actualizarPanelTacografo();
+  actualizarNormativaText();
+}
+
+function actualizarPanelTacografo() {
+  const h1 = Math.floor(segsConductionActual / 3600);
+  const m1 = Math.floor((segsConductionActual % 3600) / 60);
+  document.getElementById('taco-continua').textContent = `${String(h1).padStart(2,'0')}:${String(m1).padStart(2,'0')}`;
+
+  const h2 = Math.floor(segsConductionDiaria / 3600);
+  const m2 = Math.floor((segsConductionDiaria % 3600) / 60);
+  document.getElementById('taco-diaria').textContent = `${String(h2).padStart(2,'0')}:${String(m2).padStart(2,'0')}`;
+
+  const pct = Math.min(segsConductionDiaria / 32400 * 100, 100).toFixed(0);
+  document.getElementById('taco-pct').textContent = pct + '%';
+  const barra = document.getElementById('taco-barra');
+  barra.style.width = pct + '%';
+  barra.style.background = pct > 90 ? 'var(--red)' : pct > 75 ? 'var(--amber)' : 'var(--green)';
+
+  const led = document.getElementById('taco-led');
+  const estadoTxt = document.getElementById('taco-estado-txt');
+  if (segsConductionActual >= 16200) {
+    led.className = 'led red';
+    estadoTxt.textContent = '🛑 ALERTA INFRACCIÓN';
+    estadoTxt.style.color = 'var(--red)';
+  } else if (cronoEstado === 'conduccion') {
+    led.className = 'led';
+    estadoTxt.textContent = 'CONDUCCIÓN';
+    estadoTxt.style.color = 'var(--green)';
+  } else {
+    led.className = 'led amber';
+    estadoTxt.textContent = cronoEstado === 'pausa' ? '⏸️ PAUSA / DESCANSO' : '🛠️ OTROS TRABAJOS';
+    estadoTxt.style.color = 'var(--amber)';
+  }
+
+  const sub = document.getElementById('taco-subestado');
+  sub.textContent = vehiculoActual === 'ESPECIAL' ? '⚠️ Modo Convoy Excepcional — Vmax limitada' : `Operación de ${vehiculoActual.charAt(0) + vehiculoActual.slice(1).toLowerCase()}`;
+}
+
+function actualizarNormativaText() {
+  const box = document.getElementById('norm-text');
+  if (vehiculoActual === 'CAMIÓN') {
+    box.innerHTML = '<strong>■ CONDUCCIÓN CONTINUA:</strong> Máx. 4h 30min. Pausa obligatoria 45 min.<br><strong>■ FRACCIONAMIENTO:</strong> 15 min + 30 min (en ese orden).<br><strong>■ CONDUCCIÓN DIARIA:</strong> Máx. 9h (extensible a 10h dos veces/semana).<br><strong>■ CONTROL:</strong> Registro automático tacógrafo digital.';
+  } else if (vehiculoActual === 'AUTOBÚS') {
+    box.innerHTML = '<strong>■ CONDUCCIÓN CONTINUA:</strong> Máx. 4h 30min.<br><strong>■ FLEXIBILIDAD:</strong> Bloques mínimos de 15 min (15+30 / 30+15 / 15+15+15).<br><strong>■ ACCESO:</strong> Permitido carriles Bus-VAO y estaciones urbanas.';
+  } else {
+    box.innerHTML = '<strong>■ TRANSPORTE ESPECIAL (ACC):</strong> Rutómetro DGT obligatorio.<br><strong>■ RESTRICCIONES:</strong> Prohibida circulación nocturna salvo autorización expresa.<br><strong>■ FIN DE SEMANA:</strong> Prohibido Viernes 13:00 a Lunes 00:00.';
+  }
+}
+
+// ============================================================
+// 2. CRONÓMETRO
+// ============================================================
+function tickCrono() {
+  if (!cronoBotaActiva) return;
+
+  if (cronoEstado === 'pausa') {
+    if (segsPausaRestantes > 0) {
+      segsPausaRestantes--;
+    } else {
+      cronoBotaActiva = false;
+      document.getElementById('crono-estado').textContent = '✅ PAUSA COMPLETADA — Listo para conducir';
+      document.getElementById('crono-estado').style.color = 'var(--green)';
+      document.getElementById('crono-info').textContent = '✅ Puede reanudar la conducción';
+      vibrar([200, 100, 200]);
+    }
+    const restMin = Math.floor(segsPausaRestantes / 60);
+    const restSec = segsPausaRestantes % 60;
+    document.getElementById('crono-display').textContent = `${String(restMin).padStart(2,'0')}:${String(restSec).padStart(2,'0')}:00`;
+    document.getElementById('crono-display').style.color = 'var(--amber)';
+    const pctPausa = segsPausaRestantes / 2700;
+    const b = document.getElementById('crono-barra');
+    b.style.width = (pctPausa * 100) + '%';
+    b.style.background = 'var(--amber)';
+    document.getElementById('crono-info').textContent = `⏸️ Pausa en curso — Restante: ${restMin}:${String(restSec).padStart(2,'0')}`;
+
+  } else {
+    if (cronoEstado === 'conduccion') {
+      segsConductionActual++;
+      segsConductionDiaria++;
+
+      // Aviso 4h 15m
+      if (segsConductionActual === 15300 && !avisoPrevio) {
+        avisoPrevio = true;
+        vibrar([300]);
+        document.getElementById('crono-display').style.color = 'var(--amber)';
+        document.getElementById('crono-estado').textContent = '⚠️ AVISO: 15 minutos para pausa obligatoria';
+        document.getElementById('crono-estado').style.color = 'var(--amber)';
+      }
+
+      // Límite 4h 30m
+      if (segsConductionActual >= 16200 && !avisoLimite) {
+        avisoLimite = true;
+        vibrar([500, 200, 500, 200, 500]);
+        document.getElementById('crono-display').style.color = 'var(--red)';
+        document.getElementById('crono-estado').textContent = '🛑 INFRACCIÓN: DETENGA EL VEHÍCULO';
+        document.getElementById('crono-estado').style.color = 'var(--red)';
+      }
+
+      const restantes = Math.max(0, 16200 - segsConductionActual);
+      const rH = Math.floor(restantes / 3600);
+      const rM = Math.floor((restantes % 3600) / 60);
+      document.getElementById('crono-info').textContent = `Tiempo antes de pausa obligatoria: ${rH}h ${String(rM).padStart(2,'0')}m`;
+
+      const pct = Math.min(segsConductionActual / 16200, 1);
+      const b = document.getElementById('crono-barra');
+      b.style.width = (pct * 100) + '%';
+      b.style.background = pct > 0.95 ? 'var(--red)' : pct > 0.85 ? 'var(--amber)' : 'var(--green)';
+    }
+
+    const h = Math.floor(segsConductionActual / 3600);
+    const m = Math.floor((segsConductionActual % 3600) / 60);
+    const s = segsConductionActual % 60;
+    document.getElementById('crono-display').textContent =
+      `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  }
+
+  actualizarPanelTacografo();
+}
+
+function setCronoEstado(estado) {
+  cronoEstado = estado;
+  cronoBotaActiva = true;
+
+  const display = document.getElementById('crono-display');
+  const estadoLbl = document.getElementById('crono-estado');
+
+  if (estado === 'pausa') {
+    segsPausaRestantes = 2700;
+    segsConductionActual = 0;
+    avisoPrevio = false;
+    avisoLimite = false;
+    display.style.color = 'var(--amber)';
+    estadoLbl.textContent = 'ESTADO: PAUSA / DESCANSO';
+    estadoLbl.style.color = 'var(--amber)';
+    document.getElementById('crono-barra').style.background = 'var(--amber)';
+  } else if (estado === 'conduccion') {
+    display.style.color = 'var(--cyan)';
+    estadoLbl.textContent = 'ESTADO: CONDUCCIÓN';
+    estadoLbl.style.color = 'var(--green)';
+  } else {
+    display.style.color = '#3B82F6';
+    estadoLbl.textContent = 'ESTADO: OTROS TRABAJOS';
+    estadoLbl.style.color = '#3B82F6';
+  }
+}
+
+function reiniciarCrono() {
+  cronoBotaActiva = false;
+  cronoEstado = 'pausa';
+  segsConductionActual = 0;
+  segsConductionDiaria = 0;
+  segsPausaRestantes = 2700;
+  avisoPrevio = false;
+  avisoLimite = false;
+  document.getElementById('crono-display').textContent = '00:00:00';
+  document.getElementById('crono-display').style.color = 'var(--cyan)';
+  document.getElementById('crono-estado').textContent = 'ESTADO: PAUSA / DESCANSO';
+  document.getElementById('crono-estado').style.color = 'var(--amber)';
+  document.getElementById('crono-info').textContent = 'Tiempo disponible antes de pausa: 4h 30m';
+  document.getElementById('crono-barra').style.width = '0%';
+  document.getElementById('crono-barra').style.background = 'var(--green)';
+  actualizarPanelTacografo();
+}
+
+function vibrar(patron) {
+  if (navigator.vibrate) navigator.vibrate(patron);
+}
+
+// ============================================================
+// 3. TRANSPORTE ESPECIAL
+// ============================================================
+function calcularEspecial() {
+  const ancho    = parseFloat(document.getElementById('esp-ancho').value) || 0;
+  const longitud = parseFloat(document.getElementById('esp-longitud').value) || 0;
+  const masa     = parseFloat(document.getElementById('esp-masa').value) || 0;
+  const altura   = parseFloat(document.getElementById('esp-altura').value) || 0;
+
+  let categoria = 'RÉGIMEN COMÚN (No Especial)';
+  let escolta   = 'Ninguno requerido';
+  let velocidad = 'Estándar de la vía';
+  let extras    = [];
+
+  if (ancho > 3.0 || longitud > 20.55 || masa > 40.0 || altura > 4.0) {
+    if (ancho <= 3.5 && longitud <= 24.95 && masa <= 56.0) {
+      categoria = 'CATEGORÍA I — Autorización Genérica (OC-AUTOG)';
+      escolta   = '1 Vehículo Piloto detrás (Autovía) o delante (Convencional).';
+      velocidad = '70 km/h Autovía / 60 km/h Convencional.';
+      extras    = ['Señalización luminosa obligatoria.', 'Rutómetro aprobado por Delegación.'];
+    } else if (ancho <= 5.0 && longitud <= 40.0 && masa <= 110.0) {
+      categoria = 'CATEGORÍA II — Autorización Específica (OC-ESPE)';
+      escolta   = ancho > 3.75 ? '2 Vehículos Piloto obligatorios.' : '1 Vehículo Piloto.';
+      velocidad = '60 km/h Autovía / 50 km/h Convencional.';
+      extras    = ['Comunicación previa a la DGT.', 'Autorización específica de itinerario.'];
+    } else {
+      categoria = 'CATEGORÍA III — Autorización Excepcional (OC-EXCE)';
+      escolta   = 'Coches piloto + Escolta Guardia Civil / Policía Nacional.';
+      velocidad = 'MÁXIMO 45 km/h.';
+      extras    = [
+        'Estudio técnico de itinerario obligatorio.',
+        'Autorización individual firmada DGT.',
+        'Prohibida circulación nocturna.',
+        'Prohibida circulación fines de semana y festivos.'
+      ];
+    }
+  }
+
+  const extrasText = extras.map(e => `   • ${e}`).join('\n') || '   • Sin requisitos adicionales.';
+
+  document.getElementById('esp-resultado').textContent =
+`📋 DIAGNÓSTICO LEGAL — CONVOY ESPECIAL
+${'─'.repeat(48)}
+📐 DATOS: Ancho ${ancho}m | Long. ${longitud}m | Masa ${masa}t | Alt. ${altura}m
+
+🔹 CLASIFICACIÓN:  ${categoria}
+🔹 VELOCIDAD MÁX:  ${velocidad}
+🔹 ESCOLTA/PILOTO: ${escolta}
+
+📋 REQUISITOS:
+${extrasText}
+
+🚨 RESTRICCIONES GENERALES DGT:
+   1. Prohibido Viernes 13:00 → Lunes 00:00 y vísperas festivos.
+   2. Obligatorio portar copia de autorización en el vehículo.
+   3. En caso de incidencia, comunicar inmediatamente a la DGT.`;
+}
+
+// ============================================================
+// 4. GPS
+// ============================================================
+let mapaCargado = false;
+
+function iniciarMapa() {
+  if (mapaCargado) return;
+  mapaCargado = true;
+  // Usar OpenStreetMap embebido (funciona sin API key)
+  const iframe = document.getElementById('map-iframe');
+  iframe.src = 'https://www.openstreetmap.org/export/embed.html?bbox=-6.3%2C36.8%2C-5.3%2C37.5&layer=mapnik&marker=37.162%2C-5.908';
+}
+
+function calcularRutaGPS() {
+  const destino = document.getElementById('gps-destino').value.trim();
+  if (!destino) return;
+
+  const res = document.getElementById('gps-resultado');
+  res.textContent = '🔍 Calculando ruta optimizada para vehículos pesados...';
+
+  const altura = vehiculoActual === 'ESPECIAL'
+    ? (parseFloat(document.getElementById('esp-altura').value) || 4.30)
+    : vehiculoActual === 'CAMIÓN' ? 4.0 : 3.5;
+
+  // Abrir en Google Maps con parámetros de transporte
+  const origenCoords = '37.162,-5.908';
+  const url = `https://www.google.com/maps/dir/${encodeURIComponent(origenCoords)}/${encodeURIComponent(destino)}`;
+  window.open(url, '_blank');
+
+  // Actualizar mapa embebido con destino
+  const iframe = document.getElementById('map-iframe');
+  iframe.src = `https://www.openstreetmap.org/export/embed.html?bbox=-6.5%2C36.5%2C-5.0%2C38.0&layer=mapnik`;
+
+  // Calcular info de ruta aproximada
+  const velocidades = { 'CAMIÓN': 80, 'AUTOBÚS': 90, 'ESPECIAL': 50 };
+  const vel = velocidades[vehiculoActual] || 80;
+
+  res.textContent =
+`🛣️ ITINERARIO PROFESIONAL [${vehiculoActual}]
+${'─'.repeat(50)}
+📍 Origen:  Los Palacios y Villafranca (Sevilla)
+🏁 Destino: ${destino}
+🚗 Vel. media estimada: ${vel} km/h
+🔍 Altura vehículo: ${altura}m
+
+ℹ️ Ruta abierta en Google Maps →
+
+${vehiculoActual === 'CAMIÓN' ? '• RESTRICCIONES: Rutas de mercancías activas.\n• VEL. MÁX: 90 km/h en autovías.' :
+  vehiculoActual === 'AUTOBÚS' ? '• Acceso carriles Bus-VAO y estaciones urbanas.\n• VEL. MÁX: 100 km/h en autovías.' :
+  '• ⚠️ CONVOY ESPECIAL: Rutómetro DGT obligatorio.\n• Verificar todos los gálibos en itinerario.'}
+
+💡 CONSEJO: Usa la vista Satélite de Google Maps para detectar gálibos bajos visualmente.`;
+}
+
+function abrirGoogleMaps() {
+  const destino = document.getElementById('gps-destino').value.trim();
+  const base = 'https://www.google.com/maps';
+  const url = destino
+    ? `${base}/dir/Los+Palacios+Sevilla/${encodeURIComponent(destino)}`
+    : `${base}/@37.162,-5.908,14z`;
+  window.open(url, '_blank');
+}
+
+function abrirStreetView() {
+  window.open('https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=37.162,-5.908', '_blank');
+}
+
+function reiniciarGPS() {
+  document.getElementById('gps-destino').value = '';
+  document.getElementById('gps-resultado').textContent = 'Introduce un destino para trazar la ruta con restricciones para vehículos pesados.';
+  const iframe = document.getElementById('map-iframe');
+  iframe.src = 'https://www.openstreetmap.org/export/embed.html?bbox=-6.3%2C36.8%2C-5.3%2C37.5&layer=mapnik&marker=37.162%2C-5.908';
+}
+
+// ============================================================
+// 5. DGT
+// ============================================================
+function consultarDGT() {
+  const dia = document.getElementById('dgt-dia').value;
+  const mes = document.getElementById('dgt-mes').value;
+  const anio = document.getElementById('dgt-anio').value;
+
+  const ancho = document.getElementById('esp-ancho')?.value || 'N/A';
+  const longitud = document.getElementById('esp-longitud')?.value || 'N/A';
+  const peso = document.getElementById('esp-masa')?.value || 'N/A';
+
+  let prompt = `Actúa como inspector de tráfico de la DGT de España. Determina técnicamente las restricciones de circulación aplicables el: '${dia} de ${mes} de ${anio}'. Identifica qué día de la semana es y si hay festividades o periodos de alta ocupación.\n\n■ VEHÍCULO:\n- Categoría: ${vehiculoActual}\n`;
+
+  if (vehiculoActual === 'ESPECIAL') {
+    prompt += `- Convoy: Ancho ${ancho}m, Longitud ${longitud}m, Masa ${peso}t.\n`;
+  }
+
+  prompt += `\nResponde con este esquema:\n1. 🚦 ¿CIRCULACIÓN PERMITIDA? (Habilitado / Prohibido / Condicionado)\n2. ⏱️ HORARIOS DE RESTRICCIÓN: Franjas horarias exactas.\n3. 🗺️ TRAMOS AFECTADOS: Red RIMP o puntos conflictivos.\n4. 📦 EXCEPCIONES Y MERCANCÍAS EXENTAS.`;
+
+  geminiStream(prompt, 'dgt-resultado');
+}
+
+// ============================================================
+// 6. LOTT
+// ============================================================
+function analizarLOTT() {
+  const seleccion = document.getElementById('lott-combo').value;
+  const prompt = `Analiza detalladamente bajo la LOTT española (Ley 16/1987) el supuesto: '${seleccion}'.\nResponde con:\n1. Clasificación de gravedad (Leve / Grave / Muy Grave).\n2. Cuantía exacta de la sanción (€) según baremo actual.\n3. Afectación a la pérdida de honorabilidad empresarial.\n4. Artículo específico de la LOTT infringido.\n5. Posibilidades de reducción por pronto pago o conformidad.`;
+  geminiStream(prompt, 'lott-resultado');
+}
+
+// ============================================================
+// 7. NORMATIVA UE
+// ============================================================
+function buscarNormativa() {
+  const query = document.getElementById('norm-query').value.trim();
+  if (!query) return;
+  const prompt = `Explica de forma directa el contenido regulatorio del concepto europeo de transporte: '${query}'. Incluye: tiempos máximos, excepciones vigentes, obligaciones en cabina y sanciones típicas.`;
+  geminiStream(prompt, 'norm-resultado');
+}
+
+// ============================================================
+// 8. ZBE
+// ============================================================
+function verificarZBE() {
+  const ciudad = document.getElementById('zbe-ciudad').value;
+  const etiqueta = document.getElementById('zbe-distintivo').value;
+  const prompt = `Determina el acceso de un vehículo de transporte pesado con distintivo ambiental '${etiqueta}' a la ZBE de ${ciudad}. Indica: si está permitido el acceso, moratorias activas, restricciones por tonelaje, horarios de carga/descarga y multas aplicables.`;
+  geminiStream(prompt, 'zbe-resultado');
+}
+
+// ============================================================
+// 9. RECURSOS
+// ============================================================
+function generarRecurso() {
+  const hecho = document.getElementById('rec-hecho').value.trim();
+  const causa = document.getElementById('rec-causa').value.trim();
+  if (!hecho) return;
+  const prompt = `Actúa como abogado experto en derecho del transporte en España. Redacta una plantilla concisa de Pliego de Descargo para:\n- Hecho denunciado: ${hecho}\n- Motivo de defensa: ${causa || 'A desarrollar por el interesado'}\n\nEstructura: Encabezado (a Inspección de Transportes) → Hechos → Alegaciones jurídicas → Suplico. Tono formal. Máximo 400 palabras.`;
+  geminiStream(prompt, 'rec-resultado');
+}
+
+// ============================================================
+// 10. ASISTENTE IA
+// ============================================================
+function preguntarIA() {
+  const query = document.getElementById('ia-prompt').value.trim();
+  if (!query) return;
+  preguntaRapida(query);
+}
+
+function preguntaRapida(texto) {
+  document.getElementById('ia-prompt').value = texto;
+  const prompt = `Actúas como copiloto experto en transporte por carretera europeo. Responde de forma directa, clara y técnica:\n\n'${texto}'`;
+  geminiStream(prompt, 'ia-resultado');
+}
+
+// ============================================================
+// 11. TIQUE
+// ============================================================
+function cargarTique(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const dataUrl = e.target.result;
+    imagenTiqueBase64 = dataUrl.split(',')[1];
+    const mimeType = file.type;
+
+    document.getElementById('tique-preview').src = dataUrl;
+    document.getElementById('tique-preview').dataset.mime = mimeType;
+    document.getElementById('tique-preview-wrap').style.display = 'block';
+    document.getElementById('tique-filename').textContent = file.name;
+    document.getElementById('upload-zone').style.borderColor = 'var(--cyan)';
+  };
+  reader.readAsDataURL(file);
+}
+
+function analizarTique() {
+  if (!imagenTiqueBase64) {
+    document.getElementById('tique-resultado').textContent = '❌ Carga una imagen primero.';
+    return;
+  }
+  const mimeType = document.getElementById('tique-preview').dataset.mime || 'image/jpeg';
+  const prompt = `Analiza esta imagen de tique de tacógrafo digital. Genera un informe directo, sin saludos. Usa esta estructura exacta:\n\n🔍 DETECCIONES CLAVE:\n- [Dato detectado]\n\n⚖️ INFRACCIONES IDENTIFICADAS:\n- [Infracción concreta o 'Ninguna detectada']\n\n💡 ACCIÓN RECOMENDADA:\n- [Consejo directo de 1 frase].`;
+  geminiStream(prompt, 'tique-resultado', true, imagenTiqueBase64, mimeType);
+}
+</script>
+  
+<script>
+const manifest = {
+  name: 'Copiloto Inteligente de Transporte',
+  short_name: 'Copiloto v2.8',
+  description: 'Tacógrafo digital, GPS, restricciones DGT y asistente IA para transportistas',
+  start_url: '.',
+  display: 'standalone',
+  background_color: '#0B0F19',
+  theme_color: '#06B6D4',
+  orientation: 'portrait-primary',
+  // Configuración de la imagen del simulador como icono
+  icons: [
+    { src: 'images.jpeg', sizes: '192x192', type: 'image/jpeg' },
+    { src: 'images.jpeg', sizes: '512x512', type: 'image/jpeg' }
+  ]
+};
+const blob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+const manifestUrl = URL.createObjectURL(blob);
+const link = document.createElement('link');
+link.rel = 'manifest';
+link.href = manifestUrl;
+document.head.appendChild(link);
+ 
+
+// 🍏 ENLACE ESPECIAL PARA RECONOCIMIENTO DE ICONO EN IOS (SAFARI)
+const appleLink = document.createElement('link');
+appleLink.rel = 'apple-touch-icon';
+appleLink.href = 'images.jpeg';
+document.head.appendChild(appleLink);
+</script>
+
+</body>
+</html>
