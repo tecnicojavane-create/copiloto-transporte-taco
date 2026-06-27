@@ -1,215 +1,1298 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Copiloto PWA</title>
-    <meta name="theme-color" content="#1e1e2f">
-    
-    <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="icon.png">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-canvas">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0B0F19">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Copiloto Transporte">
+<meta name="description" content="Copiloto Inteligente de Transporte v2.8 - Tacógrafo, GPS, DGT, IA">
+<title>Copiloto Transporte v2.8</title>
 
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+<style>
+  :root {
+    --bg:       #0B0F19;
+    --sidebar:  #0F172A;
+    --card:     #111827;
+    --border:   #1E293B;
+    --cyan:     #06B6D4;
+    --cyan2:    #38BDF8;
+    --blue:     #1E3A8A;
+    --green:    #10B981;
+    --amber:    #F59E0B;
+    --red:      #EF4444;
+    --text:     #F3F4F6;
+    --muted:    #94A3B8;
+    --dim:      #64748B;
+    --radius:   12px;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
 
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { 
-            font-family: system-ui, -apple-system, sans-serif; 
-            background: #121214; 
-            color: #ffffff; 
-            display: flex; 
-            flex-direction: column; 
-            height: 100vh; 
-            overflow: hidden;
-        }
-        
-        #map { 
-            flex: 1; 
-            width: 100%; 
-            z-index: 1;
-        }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
-        .dashboard { 
-            background: rgba(30, 30, 36, 0.95); 
-            padding: 15px; 
-            border-top-left-radius: 20px; 
-            border-top-right-radius: 20px; 
-            box-shadow: 0 -4px 20px rgba(0,0,0,0.4); 
-            text-align: center;
-            z-index: 10;
-            backdrop-filter: blur(10px);
-        }
-        
-        h1 { font-size: 1.2rem; margin-bottom: 5px; color: #4fc3f7; }
-        .grid-datos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0; }
-        .data-box { background: #2a2a35; padding: 10px; border-radius: 8px; font-size: 0.85rem; text-align: left; }
-        .data-box b { color: #4fc3f7; }
-        
-        #estado { margin: 10px 0; color: #ffbc00; font-weight: 500; font-size: 0.9rem; }
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+  }
 
-        .btn-mic { 
-            position: absolute; 
-            bottom: 160px; 
-            right: 20px; 
-            background: #ff4757; 
-            color: white; 
-            border: none; 
-            width: 65px; 
-            height: 65px; 
-            border-radius: 50%; 
-            font-size: 1.6rem; 
-            cursor: pointer; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            box-shadow: 0 4px 15px rgba(255, 71, 87, 0.5); 
-            z-index: 100;
-            transition: transform 0.2s;
-            -webkit-tap-highlight-color: transparent;
-        }
-        .btn-mic.recording { background: #2ed573; animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
-    </style>
+  /* ── APP SHELL ── */
+  #app { display: flex; flex-direction: column; height: 100dvh; }
+
+  /* ── TOPBAR ── */
+  #topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--sidebar);
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    padding-top: max(12px, env(safe-area-inset-top));
+  }
+  #topbar .logo { font-size: 14px; font-weight: 800; color: var(--cyan); letter-spacing: 1px; }
+  #topbar .subtitle { font-size: 10px; color: var(--dim); margin-top: 2px; }
+  #menu-toggle {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; cursor: pointer; color: var(--cyan);
+    font-size: 18px; line-height: 1;
+  }
+
+  /* ── MAIN LAYOUT ── */
+  #main { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── SIDEBAR ── */
+  #sidebar {
+    width: 260px; background: var(--sidebar);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    transition: transform 0.3s ease;
+    z-index: 100; flex-shrink: 0;
+    overflow-y: auto;
+  }
+  #sidebar.hidden { transform: translateX(-100%); position: absolute; height: calc(100% - 60px); }
+  #sidebar .menu-label {
+    font-size: 10px; font-weight: 700; color: var(--dim);
+    padding: 14px 16px 6px; letter-spacing: 1px;
+  }
+  .menu-btn {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 16px; cursor: pointer;
+    font-size: 13px; font-weight: 600; color: #E2E8F0;
+    border: none; background: none; width: 100%; text-align: left;
+    border-radius: 8px; margin: 1px 8px; width: calc(100% - 16px);
+    transition: background 0.15s, color 0.15s;
+  }
+  .menu-btn:hover, .menu-btn.active {
+    background: var(--blue); color: var(--cyan);
+  }
+  #sidebar .autor {
+    margin-top: auto; padding: 16px;
+    font-size: 11px; font-style: italic; color: var(--cyan);
+    border-top: 1px solid var(--border);
+  }
+
+  /* ── CONTENT ── */
+  #content {
+    flex: 1; overflow-y: auto; overflow-x: hidden;
+    padding: 16px; padding-bottom: calc(16px + var(--safe-bottom));
+  }
+
+  /* ── OVERLAY (sidebar mobile) ── */
+  #overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6); z-index: 99;
+  }
+  #overlay.show { display: block; }
+
+  /* ── SECTIONS ── */
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; margin-bottom: 14px;
+  }
+  .card-title {
+    font-size: 11px; font-weight: 700; color: var(--dim);
+    letter-spacing: 1px; margin-bottom: 12px; text-transform: uppercase;
+  }
+
+  /* ── PAGE TITLE ── */
+  .page-title {
+    font-size: 15px; font-weight: 800; color: var(--text);
+    margin-bottom: 16px; line-height: 1.3;
+  }
+
+  /* ── INSTRUMENT PANEL ── */
+  #instrument-panel {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    margin-bottom: 14px;
+  }
+  .instrument {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px; text-align: center;
+  }
+  .instrument .val {
+    font-size: 22px; font-weight: 800; font-family: 'Courier New', monospace;
+    color: var(--cyan);
+  }
+  .instrument .lbl { font-size: 10px; color: var(--dim); margin-top: 4px; }
+  .instrument .sub { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  /* STATUS LED */
+  .status-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px; background: var(--card);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    margin-bottom: 14px;
+  }
+  .led {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--green); flex-shrink: 0;
+    box-shadow: 0 0 8px currentColor;
+  }
+  .led.amber { background: var(--amber); }
+  .led.red { background: var(--red); }
+  .status-txt { font-size: 13px; font-weight: 700; }
+
+  /* VEHICLE SELECTOR */
+  .seg-btn-group {
+    display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap;
+  }
+  .seg-btn {
+    flex: 1; min-width: 90px; padding: 9px 6px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card); color: var(--muted);
+    font-size: 12px; font-weight: 700; cursor: pointer;
+    transition: all 0.15s; text-align: center;
+  }
+  .seg-btn.active { background: var(--cyan); color: var(--bg); border-color: var(--cyan); }
+
+  /* PROGRESS BAR */
+  .progress-wrap { margin: 10px 0; }
+  .progress-label {
+    display: flex; justify-content: space-between;
+    font-size: 11px; color: var(--muted); margin-bottom: 6px;
+  }
+  .progress-bar {
+    height: 10px; background: var(--border); border-radius: 6px; overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%; border-radius: 6px;
+    background: var(--green); transition: width 0.5s, background 0.5s;
+    width: 0%;
+  }
+
+  /* ── CRONÓMETRO ── */
+  #crono-display {
+    font-size: 52px; font-weight: 900; font-family: 'Courier New', monospace;
+    color: var(--cyan); text-align: center; letter-spacing: 4px;
+    padding: 20px 0; transition: color 0.3s;
+  }
+  #crono-estado {
+    text-align: center; font-size: 14px; font-weight: 700;
+    color: var(--amber); margin-bottom: 14px;
+  }
+  #crono-info {
+    text-align: center; font-size: 12px; color: var(--muted); margin-bottom: 16px;
+  }
+  .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .btn {
+    padding: 12px 10px; border: none; border-radius: 10px;
+    font-size: 13px; font-weight: 700; cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .btn:active { transform: scale(0.96); opacity: 0.85; }
+  .btn-green { background: var(--green); color: var(--bg); }
+  .btn-amber { background: var(--amber); color: var(--bg); }
+  .btn-blue  { background: #3B82F6; color: #fff; }
+  .btn-red   { background: var(--red); color: #fff; }
+  .btn-cyan  { background: var(--cyan); color: var(--bg); }
+  .btn-full  { grid-column: 1 / -1; }
+
+  /* ── FORM ELEMENTS ── */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group label { font-size: 11px; font-weight: 600; color: var(--cyan2); }
+  .form-input {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px;
+    color: var(--text); font-size: 14px; outline: none;
+    transition: border-color 0.15s;
+  }
+  .form-input:focus { border-color: var(--cyan); }
+  .form-select {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px;
+    color: var(--text); font-size: 13px; outline: none; width: 100%;
+    appearance: none; cursor: pointer;
+  }
+  .select-wrap { position: relative; }
+  .select-wrap::after {
+    content: '▾'; position: absolute; right: 12px; top: 50%;
+    transform: translateY(-50%); color: var(--cyan); pointer-events: none;
+  }
+
+  /* ── RESULT TEXTBOX ── */
+  .result-box {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px;
+    font-size: 13px; color: var(--text); line-height: 1.6;
+    min-height: 180px; white-space: pre-wrap; word-break: break-word;
+    max-height: 45vh; overflow-y: auto;
+  }
+  .result-box.streaming { border-color: var(--cyan); }
+
+  /* ── API KEY MODAL ── */
+  #modal-apikey {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.85); z-index: 999;
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  #modal-apikey.show { display: flex; }
+  .modal-box {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 24px; width: 100%; max-width: 400px;
+  }
+  .modal-box h2 { font-size: 16px; color: var(--cyan); margin-bottom: 8px; }
+  .modal-box p { font-size: 12px; color: var(--muted); margin-bottom: 16px; line-height: 1.5; }
+
+  /* ── GPS MAP PLACEHOLDER ── */
+  #map-container {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); height: 280px;
+    display: flex; flex-direction: column;
+    overflow: hidden; margin-bottom: 14px;
+    position: relative;
+  }
+  #map-iframe { width: 100%; height: 100%; border: none; border-radius: var(--radius); }
+  .map-overlay-btn {
+    position: absolute; bottom: 10px; right: 10px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+
+  /* RESPONSIVE — desktop muestra sidebar fijo */
+  @media (min-width: 768px) {
+    #menu-toggle { display: none; }
+    #sidebar { transform: none !important; position: relative; }
+    #overlay { display: none !important; }
+  }
+  @media (max-width: 767px) {
+    #sidebar { position: absolute; top: 0; left: 0; height: 100%; }
+    #sidebar:not(.hidden) { box-shadow: 4px 0 20px rgba(0,0,0,0.5); }
+  }
+
+  /* STREAMING CURSOR */
+  .cursor::after {
+    content: '▌'; color: var(--cyan); animation: blink 1s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
 </head>
 <body>
 
-    <div id="map"></div>
-
-    <button class="btn-mic" id="btn-voz">🎙️</button>
-
-    <div class="dashboard">
-        <h1>Copiloto Activo</h1>
-        <div id="estado">Pulsa el micrófono para hablar</div>
-        
-        <button id="btn-permisos" style="background: #2ed573; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; margin-bottom: 10px; width: 100%; display: block;">
-            🚀 Activar GPS y Copiloto
-        </button>
-
-        <div class="grid-datos">
-            <div class="data-box">📍 <b>GPS:</b> <br><span id="gps">Buscando...</span></div>
-            <div class="data-box">🚀 <b>Velocidad:</b> <br><span id="velocidad">0 km/h</span></div>
-        </div>
+<div id="modal-apikey">
+  <div class="modal-box">
+    <h2>🔑 Configuración Inicial</h2>
+    <p>Introduce tu clave de Google Gemini API para activar el asistente IA, las restricciones DGT y el análisis de tiques.<br><br>
+    Se guardará localmente en este dispositivo.</p>
+    <div class="form-group" style="margin-bottom:14px">
+      <label>API KEY</label>
+      <input type="password" id="input-apikey" class="form-input" placeholder="Pega tu API Key aquí...">
     </div>
+    <button class="btn btn-cyan btn-full" onclick="guardarApiKey()">Guardar y Conectar</button>
+    <p style="margin-top:10px;font-size:11px;color:var(--dim)">
+      Obtén tu clave gratis en <a href="https://aistudio.google.com" target="_blank" style="color:var(--cyan)">aistudio.google.com</a>
+    </p>
+  </div>
+</div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<div id="app">
 
-    <script>
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js').catch(err => console.log("Error SW:", err));
-        }
+  <div id="topbar">
+    <div>
+      <div class="logo">⚡ MAGNAPHONE V2.8</div>
+      <div class="subtitle">Copiloto Inteligente de Transporte</div>
+    </div>
+    <button id="menu-toggle" onclick="toggleSidebar()">☰</button>
+  </div>
 
-        // Inicializar Mapa
-        const map = L.map('map', { zoomControl: false }).setView([40.4167, -3.7037], 15); 
-        L.control.zoom({ position: 'topright' }).addTo(map);
+  <div id="main">
+    <div id="overlay" onclick="closeSidebar()"></div>
 
-        // URL de OpenStreetMap (CORREGIDA)
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors'
-        }).addTo(map);
+    <nav id="sidebar" class="hidden">
+      <div class="menu-label">MÓDULOS DE CONTROL</div>
+      <button class="menu-btn active" onclick="showSection('tacografo')">🚛 Tacógrafo</button>
+      <button class="menu-btn" onclick="showSection('cronometro')">⏱️ Cronómetro en Ruta</button>
+      <button class="menu-btn" onclick="showSection('especial')">⚠️ Transporte Especial</button>
+      <button class="menu-btn" onclick="showSection('gps')">🗺️ Satélite & Gálibos</button>
+      <button class="menu-btn" onclick="showSection('dgt')">🛑 Restricciones DGT</button>
+      <button class="menu-btn" onclick="showSection('lott')">⚖️ Sanciones LOTT</button>
+      <button class="menu-btn" onclick="showSection('normativa')">🇪🇺 Normativa UE</button>
+      <button class="menu-btn" onclick="showSection('zbe')">🏙️ Restricciones ZBE</button>
+      <button class="menu-btn" onclick="showSection('recursos')">📑 Recursos de Sanciones</button>
+      <button class="menu-btn" onclick="showSection('asistente')">🤖 Asistente IA</button>
+      <button class="menu-btn" onclick="showSection('tique')">📸 Auditar Tique</button>
+      <button class="menu-btn" onclick="showSection('config')" style="margin-top:auto">⚙️ Configuración</button>
+      <div class="autor">por Javier Rabe</div>
+    </nav>
 
-        let marker = L.circleMarker([40.4167, -3.7037], {
-            color: '#4fc3f7', fillColor: '#00bcd4', fillOpacity: 0.8, radius: 10
-        }).addTo(map);
+    <div id="content">
 
-        let primeraLectura = true;
-        let watchId = null;
+      <div id="sec-tacografo" class="section active">
+        <div class="page-title">🚛 SISTEMA DE TACÓGRAFO INTELIGENTE</div>
 
-        document.getElementById('btn-permisos').addEventListener('click', async () => {
-            window.speechSynthesis.cancel();
-            const inicioVoz = new SpeechSynthesisUtterance("Copiloto de transporte iniciado. Buen viaje.");
-            inicioVoz.lang = 'es-ES';
-            window.speechSynthesis.speak(inicioVoz);
+        <div class="seg-btn-group" id="vehiculo-selector">
+          <button class="seg-btn active" onclick="setVehiculo('CAMIÓN', this)">🚛 CAMIÓN</button>
+          <button class="seg-btn" onclick="setVehiculo('AUTOBÚS', this)">🚌 AUTOBÚS</button>
+          <button class="seg-btn" onclick="setVehiculo('ESPECIAL', this)">⚠️ ESPECIAL</button>
+        </div>
 
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                stream.getTracks().forEach(track => track.stop());
-            } catch (e) {
-                alert("Para usar el asistente de voz, por favor permite el acceso al micrófono.");
+        <div id="instrument-panel">
+          <div class="instrument">
+            <div class="val" id="taco-continua">00:00</div>
+            <div class="lbl">Conducción continua</div>
+            <div class="sub">Máx. 4h 30m</div>
+          </div>
+          <div class="instrument">
+            <div class="val" id="taco-diaria">00:00</div>
+            <div class="lbl">Conducción diaria</div>
+            <div class="sub">Máx. 9h</div>
+          </div>
+        </div>
+
+        <div class="status-row">
+          <div class="led" id="taco-led"></div>
+          <div>
+            <div class="status-txt" id="taco-estado-txt">PAUSA / DESCANSO</div>
+            <div style="font-size:11px;color:var(--muted)" id="taco-subestado">Sistema en espera</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">CONSUMO JORNADA DIARIA</div>
+          <div class="progress-wrap">
+            <div class="progress-label">
+              <span>Conducción acumulada</span>
+              <span id="taco-pct">0%</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" id="taco-barra"></div></div>
+            <div style="font-size:11px;color:var(--dim);margin-top:5px">Cuota: 9 horas máximo</div>
+          </div>
+        </div>
+
+        <div class="norm-box" id="norm-text">
+          <strong>■ CONDUCCIÓN CONTINUA:</strong> Máximo 4h 30min. Pausa obligatoria 45 min.<br>
+          <strong>■ FRACCIONAMIENTO:</strong> 15 min + 30 min (en ese orden).<br>
+          <strong>■ CONDUCCIÓN DIARIA:</strong> Máx. 9h (extensible a 10h dos veces/semana).<br>
+          <strong>■ CONTROL:</strong> Registro automático por satélite (tacógrafo digital).
+        </div>
+
+        <div class="card" style="background:rgba(6,182,212,0.05);border-color:var(--cyan)">
+          <div style="font-size:12px;color:var(--cyan2)">
+            🛰️ Enlace GNSS: <strong style="color:var(--green)">Activo</strong>  | 
+            🔒 V.Piloto: <strong style="color:var(--cyan2)">Conectado</strong>  | 
+            🔒 Rutómetro: <strong style="color:var(--cyan2)">Sync</strong>
+          </div>
+        </div>
+      </div>
+
+      <div id="sec-cronometro" class="section">
+        <div class="page-title">⏱️ CRONÓMETRO DE CONDUCCIÓN EN VIVO</div>
+        <div class="card">
+          <div id="crono-estado">ESTADO: PAUSA / DESCANSO</div>
+          <div id="crono-display">00:00:00</div>
+          <div id="crono-info">Tiempo disponible antes de pausa: 4h 30m</div>
+          <div class="progress-wrap">
+            <div class="progress-bar" style="height:12px">
+              <div class="progress-fill" id="crono-barra"></div>
+            </div>
+          </div>
+        </div>
+        <div class="btn-grid">
+          <button class="btn btn-green" onclick="setCronoEstado('conduccion')">🚛 Conducir</button>
+          <button class="btn btn-amber" onclick="setCronoEstado('pausa')">⏸️ Pausa 45min</button>
+          <button class="btn btn-blue"  onclick="setCronoEstado('trabajo')">🛠️ Otros Trabajos</button>
+          <button class="btn btn-red"   onclick="reiniciarCrono()">🔄 Reiniciar</button>
+        </div>
+      </div>
+
+      <div id="sec-especial" class="section">
+        <div class="page-title">⚠️ CALCULADOR DE TRANSPORTE ESPECIAL</div>
+        <div class="card">
+          <div class="card-title">DIMENSIONES DEL CONVOY</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Anchura Total (m)</label>
+              <input type="number" id="esp-ancho" class="form-input" value="3.20" step="0.01">
+            </div>
+            <div class="form-group">
+              <label>Longitud Total (m)</label>
+              <input type="number" id="esp-longitud" class="form-input" value="22.50" step="0.01">
+            </div>
+            <div class="form-group">
+              <label>Masa Conjunto (ton)</label>
+              <input type="number" id="esp-masa" class="form-input" value="55.0" step="0.1">
+            </div>
+            <div class="form-group">
+              <label>Altura Máxima (m)</label>
+              <input type="number" id="esp-altura" class="form-input" value="4.30" step="0.01">
+            </div>
+          </div>
+          <button class="btn btn-cyan btn-full" onclick="calcularEspecial()">🛡️ Auditar Requisitos de Circulación</button>
+        </div>
+        <div class="result-box" id="esp-resultado">Introduce los datos del convoy y pulsa Auditar.</div>
+      </div>
+
+      <div id="sec-gps" class="section">
+        <div class="page-title">🗺️ NAVEGADOR GPS Y DETECCIÓN DE GÁLIBOS</div>
+        <div class="card" style="padding:10px">
+          <div style="display:flex;gap:8px;margin-bottom:10px">
+            <input type="text" id="gps-destino" class="form-input" placeholder="Destino (ciudad o dirección)..." style="flex:1">
+            <button class="btn btn-cyan" style="white-space:nowrap;padding:10px 14px" onclick="calcularRutaGPS()">🛣️ Ruta</button>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-blue" style="flex:1;padding:8px" onclick="abrirGoogleMaps()">📍 Google Maps</button>
+            <button class="btn" style="flex:1;padding:8px;background:var(--border);color:var(--text)" onclick="abrirStreetView()">📷 Street View</button>
+            <button class="btn btn-red" style="flex:1;padding:8px" onclick="reiniciarGPS()">🔄 Reset</button>
+          </div>
+        </div>
+        <div id="map-container">
+          <iframe id="map-iframe" src="about:blank" allowfullscreen></iframe>
+        </div>
+        <div class="result-box" id="gps-resultado" style="min-height:120px">
+          Introduce un destino para trazar la ruta con restricciones para vehículos pesados.
+        </div>
+      </div>
+
+      <div id="sec-dgt" class="section">
+        <div class="page-title">🛑 RESTRICCIONES DGT POR FECHA</div>
+        <div class="card">
+          <div class="card-title">SELECCIONAR FECHA A CONSULTAR</div>
+          <div class="form-grid" style="grid-template-columns:1fr 2fr 1fr">
+            <div class="form-group">
+              <label>Día</label>
+              <input type="number" id="dgt-dia" class="form-input" min="1" max="31" value="">
+            </div>
+            <div class="form-group">
+              <label>Mes</label>
+              <div class="select-wrap">
+                <select id="dgt-mes" class="form-select">
+                  <option>Enero</option><option>Febrero</option><option>Marzo</option>
+                  <option>Abril</option><option>Mayo</option><option>Junio</option>
+                  <option>Julio</option><option>Agosto</option><option>Septiembre</option>
+                  <option>Octubre</option><option>Noviembre</option><option>Diciembre</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Año</label>
+              <input type="number" id="dgt-anio" class="form-input" value="2026">
+            </div>
+          </div>
+          <button class="btn btn-cyan btn-full" onclick="consultarDGT()">🔍 Buscar Restricciones</button>
+        </div>
+        <div class="result-box" id="dgt-resultado">Selecciona una fecha y pulsa Buscar para auditar las restricciones DGT.</div>
+      </div>
+
+      <div id="sec-lott" class="section">
+        <div class="page-title">⚖️ AUDITORÍA DE SANCIONES LOTT</div>
+        <div class="card">
+          <div class="card-title">SELECCIONAR INFRACCIÓN</div>
+          <div class="select-wrap" style="margin-bottom:12px">
+            <select id="lott-combo" class="form-select">
+              <option>Exceso de tiempos de conducción (&gt;20%) - MUY GRAVE</option>
+              <option>Falta de hojas de registro / datos del tacógrafo - MUY GRAVE</option>
+              <option>Minoración de descansos diarios (&gt;50%) - MUY GRAVE</option>
+              <option>Carecer de tarjeta de tacógrafo en cabina - MUY GRAVE</option>
+              <option>Exceso de peso entre 15% y 25% - GRAVE</option>
+              <option>No pasar inspección periódica del tacógrafo - GRAVE</option>
+              <option>Exceso de velocidad entre 10% y 20% - GRAVE</option>
+              <option>Carecer de certificado de conductor de país tercero - MUY GRAVE</option>
+            </select>
+          </div>
+          <button class="btn btn-cyan btn-full" onclick="analizarLOTT()">⚖️ Baremar Infracción</button>
+        </div>
+        <div class="result-box" id="lott-resultado">Selecciona una infracción para calcular cuantía e inhabilitación.</div>
+      </div>
+
+      <div id="sec-normativa" class="section">
+        <div class="page-title">🇪🇺 BUSCADOR DE NORMATIVA EUROPEA</div>
+        <div class="card">
+          <div class="form-group" style="margin-bottom:12px">
+            <label>REGLAMENTO O CONCEPTO</label>
+            <input type="text" id="norm-query" class="form-input" placeholder="Ej: Reglamento 561/2006, ADR, cabotaje...">
+          </div>
+          <button class="btn btn-cyan btn-full" onclick="buscarNormativa()">🔍 Buscar Regulación</button>
+        </div>
+        <div class="result-box" id="norm-resultado">Introduce un reglamento europeo para obtener su resumen.</div>
+      </div>
+
+      <div id="sec-zbe" class="section">
+        <div class="page-title">🏙️ RESTRICCIONES ZBE URBANAS</div>
+        <div class="card">
+          <div class="form-group" style="margin-bottom:10px">
+            <label>CIUDAD / ZONA</label>
+            <div class="select-wrap">
+              <select id="zbe-ciudad" class="form-select">
+                <option>Madrid (Distrito Centro / ZBE)</option>
+                <option>Barcelona (ZBE Rondas)</option>
+                <option>Valencia</option>
+                <option>Sevilla</option>
+                <option>Zaragoza</option>
+                <option>Bilbao</option>
+                <option>Málaga</option>
+                <option>Valladolid</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:14px">
+            <label>DISTINTIVO AMBIENTAL</label>
+            <div class="select-wrap">
+              <select id="zbe-distintivo" class="form-select">
+                <option>Sin Distintivo (contaminante)</option>
+                <option>Etiqueta B</option>
+                <option>Etiqueta C</option>
+                <option>ECO</option>
+                <option>CERO Emisiones</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-cyan btn-full" onclick="verificarZBE()">🚫 Verificar Acceso</button>
+        </div>
+        <div class="result-box" id="zbe-resultado">Selecciona ciudad y distintivo para verificar el acceso.</div>
+      </div>
+
+      <div id="sec-recursos" class="section">
+        <div class="page-title">📑 GENERADOR DE RECURSOS ADMINISTRATIVOS</div>
+        <div class="card">
+          <div class="form-group" style="margin-bottom:10px">
+            <label>HECHO IMPUGNADO</label>
+            <input type="text" id="rec-hecho" class="form-input" placeholder="Ej: Multa por exceso de conducción sin pausa registrada">
+          </div>
+          <div class="form-group" style="margin-bottom:14px">
+            <label>MOTIVO DE DEFENSA</label>
+            <input type="text" id="rec-causa" class="form-input" placeholder="Ej: Causa de fuerza mayor / fallo del tacógrafo">
+          </div>
+          <button class="btn btn-green btn-full" onclick="generarRecurso()">📄 Redactar Pliego de Descargo</button>
+        </div>
+        <div class="result-box" id="rec-resultado">Introduce los datos para generar la plantilla de descargo.</div>
+      </div>
+
+      <div id="sec-asistente" class="section">
+        <div class="page-title">🤖 ASISTENTE LOGÍSTICO GEMINI</div>
+        <div class="card">
+          <div class="form-group" style="margin-bottom:12px">
+            <label>TU CONSULTA</label>
+            <input type="text" id="ia-prompt" class="form-input" placeholder="Haz una pregunta sobre tacógrafos, normativa o rutas...">
+          </div>
+          <button class="btn btn-cyan btn-full" onclick="preguntarIA()">🧠 Preguntar al Asistente</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">CONSULTAS RÁPIDAS</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            <button class="btn" style="background:var(--border);color:var(--text);font-size:11px;padding:7px 10px" onclick="preguntaRapida('¿Cuántas horas puedo conducir en una semana?')">Horas semanales</button>
+            <button class="btn" style="background:var(--border);color:var(--text);font-size:11px;padding:7px 10px" onclick="preguntaRapida('¿Qué es el descanso bisemanal?')">Descanso bisemanal</button>
+            <button class="btn" style="background:var(--border);color:var(--text);font-size:11px;padding:7px 10px" onclick="preguntaRapida('¿Cuándo necesito ferry o tren para el descanso?')">Ferry y tren</button>
+            <button class="btn" style="background:var(--border);color:var(--text);font-size:11px;padding:7px 10px" onclick="preguntaRapida('Excepciones al reglamento 561/2006 para transporte nacional')">Excepciones 561</button>
+          </div>
+        </div>
+
+        <div class="result-box" id="ia-resultado">Escribe tu consulta o usa las preguntas rápidas.</div>
+      </div>
+
+      <div id="sec-tique" class="section">
+        <div class="page-title">📸 AUDITORÍA DE TIQUES DE TACÓGRAFO</div>
+        <div class="card">
+          <div class="card-title">CARGAR IMAGEN DEL TIQUE</div>
+          <label style="display:block;cursor:pointer">
+            <div id="upload-zone" style="border:2px dashed var(--border);border-radius:10px;padding:30px;text-align:center;color:var(--muted);transition:border-color 0.2s">
+              <div style="font-size:36px;margin-bottom:8px">📷</div>
+              <div style="font-size:13px">Toca para seleccionar imagen</div>
+              <div style="font-size:11px;color:var(--dim);margin-top:4px">JPG, PNG, WEBP, BMP</div>
+            </div>
+            <input type="file" id="tique-file" accept="image/*" style="display:none" onchange="cargarTique(this)">
+          </label>
+          <div id="tique-preview-wrap" style="display:none;margin-top:10px">
+            <img id="tique-preview" style="width:100%;max-height:200px;object-fit:contain;border-radius:8px;background:var(--bg)">
+            <div id="tique-filename" style="font-size:11px;color:var(--dim);margin-top:4px;text-align:center"></div>
+          </div>
+          <button class="btn btn-cyan btn-full" style="margin-top:12px" onclick="analizarTique()">⚡ Ejecutar Análisis OCR</button>
+        </div>
+        <div class="result-box" id="tique-resultado">Carga una fotografía del tique para analizarla.</div>
+      </div>
+
+      <div id="sec-config" class="section">
+        <div class="page-title">⚙️ CONFIGURACIÓN</div>
+        <div class="card">
+          <div class="card-title">GEMINI API KEY</div>
+          <div class="form-group" style="margin-bottom:12px">
+            <label>CLAVE DE ACCESO</label>
+            <input type="password" id="config-apikey" class="form-input" placeholder="Tu API Key de Google Gemini">
+          </div>
+          <button class="btn btn-cyan btn-full" onclick="guardarApiKeyConfig()">💾 Guardar API Key</button>
+          <div id="config-status" style="font-size:12px;color:var(--green);margin-top:8px;display:none">✅ API Key guardada correctamente</div>
+        </div>
+        <div class="card">
+          <div class="card-title">INSTALAR COMO APP (PWA)</div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:12px">
+            Para instalar en Android como si fuera una APK:<br><br>
+            1. Abre este archivo en <strong style="color:var(--cyan)">Chrome</strong><br>
+            2. Pulsa el menú <strong style="color:var(--cyan)">⋮</strong> → <strong style="color:var(--cyan)">"Añadir a pantalla de inicio"</strong><br>
+            3. Acepta y la app aparecerá como icono nativo<br><br>
+            También puedes usar un servidor local con Python:<br>
+            <code style="background:var(--bg);padding:4px 8px;border-radius:4px;color:var(--cyan);font-size:12px">python -m http.server 8080</code>
+          </div>
+          <button id="btn-install" class="btn btn-green btn-full" onclick="instalarPWA()" style="display:none">📲 Instalar App en este dispositivo</button>
+        </div>
+        <div class="card">
+          <div class="card-title">INFORMACIÓN</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.8">
+            <div>Versión: <strong style="color:var(--cyan)">2.8 PWA</strong></div>
+            <div>IA: <strong style="color:var(--cyan)">Google Gemini 2.5 Flash</strong></div>
+            <div>Mapas: <strong style="color:var(--cyan)">OpenStreetMap + OSRM</strong></div>
+            <div>Autor: <strong style="color:var(--cyan)">Javier Rabe</strong></div>
+          </div>
+        </div>
+      </div>
+
+    </div></div></div><script>
+// ============================================================
+// ESTADO GLOBAL
+// ============================================================
+let API_KEY = localStorage.getItem('gemini_api_key') || '';
+let vehiculoActual = 'CAMIÓN';
+
+// Cronómetro
+let cronoInterval = null;
+let cronoBotaActiva = false;
+let cronoEstado = 'pausa'; // 'conduccion' | 'pausa' | 'trabajo'
+let segsConductionActual = 0;
+let segsConductionDiaria = 0;
+let segsPausaRestantes = 2700;
+let avisoPrevio = false;
+let avisoLimite = false;
+let imagenTiqueBase64 = null;
+
+// PWA install
+let deferredPrompt = null;
+
+// ============================================================
+// INIT
+// ============================================================
+window.addEventListener('load', () => {
+  const now = new Date();
+  document.getElementById('dgt-dia').value = now.getDate();
+  document.getElementById('dgt-mes').selectedIndex = now.getMonth();
+  document.getElementById('dgt-anio').value = now.getFullYear();
+
+  if (!API_KEY) {
+    document.getElementById('modal-apikey').classList.add('show');
+  } else {
+    document.getElementById('config-apikey').value = API_KEY;
+  }
+
+  setInterval(tickCrono, 1000);
+  actualizarPanelTacografo();
+});
+
+// PWA install prompt
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const btn = document.getElementById('btn-install');
+  if (btn) btn.style.display = 'block';
+});
+
+function instalarPWA() {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(() => { deferredPrompt = null; });
+  } else {
+    alert('Para instalar: Chrome → Menú ⋮ → "Añadir a pantalla de inicio"');
+  }
+}
+
+// ============================================================
+// SIDEBAR / NAV (CORREGIDO DE ENTORNO GLOBAL)
+// ============================================================
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  const ov = document.getElementById('overlay');
+  sb.classList.toggle('hidden');
+  ov.classList.toggle('show');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.add('hidden');
+  document.getElementById('overlay').classList.remove('show');
+}
+function showSection(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  const targetSection = document.getElementById('sec-' + id);
+  if (targetSection) targetSection.classList.add('active');
+  
+  document.querySelectorAll('.menu-btn').forEach(b => b.classList.remove('active'));
+  
+  // Buscar botón dinámicamente evitando fallos de scope en móviles
+  const activeBtn = document.querySelector(`button[onclick*="showSection('${id}')"]`);
+  if (activeBtn) activeBtn.classList.add('active');
+
+  closeSidebar();
+  if (id === 'tacografo') actualizarPanelTacografo();
+  if (id === 'gps') iniciarMapa();
+}
+
+// ============================================================
+// API KEY
+// ============================================================
+function guardarApiKey() {
+  const key = document.getElementById('input-apikey').value.trim();
+  if (key.length > 10) {
+    API_KEY = key;
+    localStorage.setItem('gemini_api_key', key);
+    document.getElementById('config-apikey').value = key;
+    document.getElementById('modal-apikey').classList.remove('show');
+  } else {
+    alert('La API Key parece demasiado corta. Verifica que es correcta.');
+  }
+}
+function guardarApiKeyConfig() {
+  const key = document.getElementById('config-apikey').value.trim();
+  if (key.length > 10) {
+    API_KEY = key;
+    localStorage.setItem('gemini_api_key', key);
+    const st = document.getElementById('config-status');
+    st.style.display = 'block';
+    setTimeout(() => st.style.display = 'none', 3000);
+  }
+}
+
+// ============================================================
+// GEMINI API - STREAMING
+// ============================================================
+async function geminiStream(prompt, targetId, esImagen = false, imagenB64 = null, mimeType = 'image/jpeg') {
+  if (!API_KEY) {
+    document.getElementById(targetId).textContent = '❌ No hay API Key configurada. Ve a ⚙️ Configuración.';
+    return;
+  }
+  const box = document.getElementById(targetId);
+  box.textContent = '⚡ Conectando con Gemini...\n\n';
+  box.classList.add('streaming');
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${API_KEY}`;
+
+  let parts;
+  if (esImagen && imagenB64) {
+    parts = [
+      { inline_data: { mime_type: mimeType, data: imagenB64 } },
+      { text: prompt }
+    ];
+  } else {
+    parts = [{ text: prompt }];
+  }
+
+  const body = {
+    contents: [{ role: 'user', parts }],
+    generationConfig: { maxOutputTokens: 3000, temperature: 0.2 }
+  };
+
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json();
+      const code = err?.error?.code || resp.status;
+      if (code === 429) {
+        box.textContent = '❌ [Error 429] Cuota diaria superada. Espera 1 minuto e intenta de nuevo.';
+      } else if (code === 503) {
+        box.textContent = '❌ [Error 503] Servidor saturado. Reintenta en unos segundos.';
+      } else {
+        box.textContent = `❌ Error ${code}: ${err?.error?.message || 'desconocido'}`;
+      }
+      box.classList.remove('streaming');
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    box.textContent = '';
+    let acum = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (txt) {
+              acum += txt;
+              box.textContent = acum;
+              box.scrollTop = box.scrollHeight;
             }
-
-            if ("geolocation" in navigator) {
-                if (watchId) navigator.geolocation.clearWatch(watchId);
-                
-                watchId = navigator.geolocation.watchPosition(pos => {
-                    const lat = pos.coords.latitude;
-                    const lon = pos.coords.longitude;
-                    const speed = pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 0;
-                    
-                    document.getElementById('gps').innerText = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
-                    document.getElementById('velocidad').innerText = `${speed} km/h`;
-
-                    const nuevaPos = [lat, lon];
-                    marker.setLatLng(nuevaPos);
-                    
-                    if (primeraLectura) {
-                        map.setView(nuevaPos, 16);
-                        primeraLectura = false;
-                    } else {
-                        map.panTo(nuevaPos);
-                    }
-                }, err => {
-                    document.getElementById('gps').innerText = "Sin señal GPS o permiso denegado";
-                }, { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
-
-                document.getElementById('btn-permisos').style.display = 'none';
-            }
-        });
-
-        const btnVoz = document.getElementById('btn-voz');
-        const estado = document.getElementById('estado');
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-        if (SpeechRecognition) {
-            const recognition = new SpeechRecognition();
-            recognition.lang = 'es-ES';
-            recognition.continuous = false;
-
-            btnVoz.addEventListener('click', () => {
-                try { recognition.start(); } catch(e) { recognition.stop(); }
-            });
-
-            recognition.onstart = () => {
-                btnVoz.classList.add('recording');
-                estado.innerText = "Te escucho...";
-                if (navigator.vibrate) navigator.vibrate(40);
-            };
-
-            // Captura de texto por voz (CORREGIDO)
-            recognition.onresult = (event) => {
-                const texto = event.results[0][0].transcript.toLowerCase();
-                estado.innerText = `Comando: "${texto}"`;
-                procesarComando(texto);
-            };
-
-            recognition.onend = () => { btnVoz.classList.remove('recording'); };
-        } else {
-            estado.innerText = "Dictado de voz no soportado en este navegador.";
+          } catch {}
         }
+      }
+    }
+  } catch (e) {
+    box.textContent = `❌ Error de red: ${e.message}\nVerifica tu conexión a internet.`;
+  }
+  box.classList.remove('streaming');
+}
 
-        function hablar(texto) {
-            window.speechSynthesis.cancel();
-            const voz = new SpeechSynthesisUtterance(texto);
-            voz.lang = 'es-ES';
-            window.speechSynthesis.speak(voz);
-        }
+// ============================================================
+// 1. TACÓGRAFO
+// ============================================================
+function setVehiculo(tipo, btn) {
+  vehiculoActual = tipo;
+  document.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  actualizarPanelTacografo();
+  actualizarNormativaText();
+}
 
-        function procesarComando(comando) {
-            if (comando.includes('dónde estoy') || comando.includes('ubicación')) {
-                const coord = marker.getLatLng();
-                hablar(`Te encuentras en las coordenadas aproximadas ${coord.lat.toFixed(2)} grados Norte y ${coord.lng.toFixed(2)} grados Oeste.`);
-            } else if (comando.includes('velocidad') || comando.includes('rápido')) {
-                const vel = document.getElementById('velocidad').innerText;
-                hablar(`Tu velocidad de circulación es de ${vel}`);
-            } else if (comando.includes('auxilio') || comando.includes('emergencia') || comando.includes('ayuda')) {
-                hablar("Alerta de emergencia detectada. Iniciando llamada de auxilio.");
-                if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-                setTimeout(() => { window.location.href = "tel:112"; }, 1500);
-            } else {
-                hablar("Comando recibido. Monitoreando tu trayecto.");
-            }
-        }
-    </script>
+function actualizarPanelTacografo() {
+  const h1 = Math.floor(segsConductionActual / 3600);
+  const m1 = Math.floor((segsConductionActual % 3600) / 60);
+  document.getElementById('taco-continua').textContent = `${String(h1).padStart(2,'0')}:${String(m1).padStart(2,'0')}`;
+
+  const h2 = Math.floor(segsConductionDiaria / 3600);
+  const m2 = Math.floor((segsConductionDiaria % 3600) / 60);
+  document.getElementById('taco-diaria').textContent = `${String(h2).padStart(2,'0')}:${String(m2).padStart(2,'0')}`;
+
+  const pct = Math.min(segsConductionDiaria / 32400 * 100, 100).toFixed(0);
+  document.getElementById('taco-pct').textContent = pct + '%';
+  const barra = document.getElementById('taco-barra');
+  barra.style.width = pct + '%';
+  barra.style.background = pct > 90 ? 'var(--red)' : pct > 75 ? 'var(--amber)' : 'var(--green)';
+
+  const led = document.getElementById('taco-led');
+  const estadoTxt = document.getElementById('taco-estado-txt');
+  if (segsConductionActual >= 16200) {
+    led.className = 'led red';
+    estadoTxt.textContent = '🛑 ALERTA INFRACCIÓN';
+    estadoTxt.style.color = 'var(--red)';
+  } else if (cronoEstado === 'conduccion') {
+    led.className = 'led';
+    estadoTxt.textContent = 'MÓDULO DE CONDUCCIÓN';
+    estadoTxt.style.color = 'var(--green)';
+  } else {
+    led.className = 'led amber';
+    estadoTxt.textContent = cronoEstado === 'pausa' ? '⏸️ PAUSA / DESCANSO' : '🛠️ OTROS TRABAJOS';
+    estadoTxt.style.color = 'var(--amber)';
+  }
+
+  const sub = document.getElementById('taco-subestado');
+  sub.textContent = vehiculoActual === 'ESPECIAL' ? '⚠️ Modo Convoy Excepcional — Vmax limitada' : `Operación de ${vehiculoActual.charAt(0) + vehiculoActual.slice(1).toLowerCase()}`;
+}
+
+function actualizarNormativaText() {
+  const box = document.getElementById('norm-text');
+  if (vehiculoActual === 'CAMIÓN') {
+    box.innerHTML = '<strong>■ CONDUCCIÓN CONTINUA:</strong> Máx. 4h 30min. Pausa obligatoria 45 min.<br><strong>■ FRACCIONAMIENTO:</strong> 15 min + 30 min (en ese orden).<br><strong>■ CONDUCCIÓN DIARIA:</strong> Máx. 9h (extensible a 10h dos veces/semana).<br><strong>■ CONTROL:</strong> Registro automático tacógrafo digital.';
+  } else if (vehiculoActual === 'AUTOBÚS') {
+    box.innerHTML = '<strong>■ CONDUCCIÓN CONTINUA:</strong> Máx. 4h 30min.<br><strong>■ FLEXIBILIDAD:</strong> Bloques mínimos de 15 min (15+30 / 30+15 / 15+15+15).<br><strong>■ ACCESO:</strong> Permitido carriles Bus-VAO y estaciones urbanas.';
+  } else {
+    box.innerHTML = '<strong>■ TRANSPORTE ESPECIAL (ACC):</strong> Rutómetro DGT obligatorio.<br><strong>■ RESTRICCIONES:</strong> Prohibida circulación nocturna salvo autorización expresa.<br><strong>■ FIN DE SEMANA:</strong> Prohibido Viernes 13:00 a Lunes 00:00.';
+  }
+}
+
+// ============================================================
+// 2. CRONÓMETRO
+// ============================================================
+function tickCrono() {
+  if (!cronoBotaActiva) return;
+
+  if (cronoEstado === 'pausa') {
+    if (segsPausaRestantes > 0) {
+      segsPausaRestantes--;
+    } else {
+      cronoBotaActiva = false;
+      document.getElementById('crono-estado').textContent = '✅ PAUSA COMPLETADA — Listo para conducir';
+      document.getElementById('crono-estado').style.color = 'var(--green)';
+      document.getElementById('crono-info').textContent = '✅ Puede reanudar la conducción';
+      vibrar([200, 100, 200]);
+    }
+    const restMin = Math.floor(segsPausaRestantes / 60);
+    const restSec = segsPausaRestantes % 60;
+    document.getElementById('crono-display').textContent = `${String(restMin).padStart(2,'0')}:${String(restSec).padStart(2,'0')}:00`;
+    document.getElementById('crono-display').style.color = 'var(--amber)';
+    const pctPausa = segsPausaRestantes / 2700;
+    const b = document.getElementById('crono-barra');
+    b.style.width = (pctPausa * 100) + '%';
+    b.style.background = 'var(--amber)';
+    document.getElementById('crono-info').textContent = `⏸️ Pausa en curso — Restante: ${restMin}:${String(restSec).padStart(2,'0')}`;
+
+  } else {
+    if (cronoEstado === 'conduccion') {
+      segsConductionActual++;
+      segsConductionDiaria++;
+
+      if (segsConductionActual === 15300 && !avisoPrevio) {
+        avisoPrevio = true;
+        vibrar([300]);
+        document.getElementById('crono-display').style.color = 'var(--amber)';
+        document.getElementById('crono-estado').textContent = '⚠️ AVISO: 15 minutos para pausa obligatoria';
+        document.getElementById('crono-estado').style.color = 'var(--amber)';
+      }
+
+      if (segsConductionActual >= 16200 && !avisoLimite) {
+        avisoLimite = true;
+        vibrar([500, 200, 500, 200, 500]);
+        document.getElementById('crono-display').style.color = 'var(--red)';
+        document.getElementById('crono-estado').textContent = '🛑 INFRACCIÓN: DETENGA EL VEHÍCULO';
+        document.getElementById('crono-estado').style.color = 'var(--red)';
+      }
+
+      const restantes = Math.max(0, 16200 - segsConductionActual);
+      const rH = Math.floor(restantes / 3600);
+      const rM = Math.floor((restantes % 3600) / 60);
+      document.getElementById('crono-info').textContent = `Tiempo antes de pausa obligatoria: ${rH}h ${String(rM).padStart(2,'0')}m`;
+
+      const pct = Math.min(segsConductionActual / 16200, 1);
+      const b = document.getElementById('crono-barra');
+      b.style.width = (pct * 100) + '%';
+      b.style.background = pct > 0.95 ? 'var(--red)' : pct > 0.85 ? 'var(--amber)' : 'var(--green)';
+    }
+
+    const h = Math.floor(segsConductionActual / 3600);
+    const m = Math.floor((segsConductionActual % 3600) / 60);
+    const s = segsConductionActual % 60;
+    document.getElementById('crono-display').textContent =
+      `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  }
+
+  actualizarPanelTacografo();
+}
+
+function setCronoEstado(estado) {
+  cronoEstado = estado;
+  cronoBotaActiva = true;
+
+  const display = document.getElementById('crono-display');
+  const estadoLbl = document.getElementById('crono-estado');
+
+  if (estado === 'pausa') {
+    segsPausaRestantes = 2700;
+    segsConductionActual = 0;
+    avisoPrevio = false;
+    avisoLimite = false;
+    display.style.color = 'var(--amber)';
+    estadoLbl.textContent = 'ESTADO: PAUSA / DESCANSO';
+    estadoLbl.style.color = 'var(--amber)';
+    document.getElementById('crono-barra').style.background = 'var(--amber)';
+  } else if (estado === 'conduccion') {
+    display.style.color = 'var(--cyan)';
+    estadoLbl.textContent = 'ESTADO: CONDUCCIÓN';
+    estadoLbl.style.color = 'var(--green)';
+  } else {
+    display.style.color = '#3B82F6';
+    estadoLbl.textContent = 'ESTADO: OTROS TRABAJOS';
+    estadoLbl.style.color = '#3B82F6';
+  }
+}
+
+function reiniciarCrono() {
+  cronoBotaActiva = false;
+  cronoEstado = 'pausa';
+  segsConductionActual = 0;
+  segsConductionDiaria = 0;
+  segsPausaRestantes = 2700;
+  avisoPrevio = false;
+  avisoLimite = false;
+  document.getElementById('crono-display').textContent = '00:00:00';
+  document.getElementById('crono-display').style.color = 'var(--cyan)';
+  document.getElementById('crono-estado').textContent = 'ESTADO: PAUSA / DESCANSO';
+  document.getElementById('crono-estado').style.color = 'var(--amber)';
+  document.getElementById('crono-info').textContent = 'Tiempo disponible antes de pausa: 4h 30m';
+  document.getElementById('crono-barra').style.width = '0%';
+  document.getElementById('crono-barra').style.background = 'var(--green)';
+  actualizarPanelTacografo();
+}
+
+function vibrar(patron) {
+  if (navigator.vibrate) navigator.vibrate(patron);
+}
+
+// ============================================================
+// 3. TRANSPORTE ESPECIAL
+// ============================================================
+function calcularEspecial() {
+  const ancho    = parseFloat(document.getElementById('esp-ancho').value) || 0;
+  const longitud = parseFloat(document.getElementById('esp-longitud').value) || 0;
+  const masa     = parseFloat(document.getElementById('esp-masa').value) || 0;
+  const altura   = parseFloat(document.getElementById('esp-altura').value) || 0;
+
+  let categoria = 'RÉGIMEN COMÚN (No Especial)';
+  let escolta   = 'Ninguno requerido';
+  let velocidad = 'Estándar de la vía';
+  let extras    = [];
+
+  if (ancho > 3.0 || longitud > 20.55 || masa > 40.0 || altura > 4.0) {
+    if (ancho <= 3.5 && longitud <= 24.95 && masa <= 56.0) {
+      categoria = 'CATEGORÍA I — Autorización Genérica (OC-AUTOG)';
+      escolta   = '1 Vehículo Piloto detrás (Autovía) o delante (Convencional).';
+      velocidad = '70 km/h Autovía / 60 km/h Convencional.';
+      extras    = ['Señalización luminosa obligatoria.', 'Rutómetro aprobado por Delegación.'];
+    } else if (ancho <= 5.0 && longitud <= 40.0 && masa <= 110.0) {
+      categoria = 'CATEGORÍA II — Autorización Específica (OC-ESPE)';
+      escolta   = ancho > 3.75 ? '2 Vehículos Piloto obligatorios.' : '1 Vehículo Piloto.';
+      velocidad = '60 km/h Autovía / 50 km/h Convencional.';
+      extras    = ['Comunicación previa a la DGT.', 'Autorización específica de itinerario.'];
+    } else {
+      categoria = 'CATEGORÍA III — Autorización Excepcional (OC-EXCE)';
+      escolta   = 'Coches piloto + Escolta Guardia Civil / Policía Nacional.';
+      velocidad = 'MÁXIMO 45 km/h.';
+      extras = [
+        'Estudio técnico de itinerario obligatorio.',
+        'Autorización individual firmada DGT.',
+        'Prohibida circulación nocturna.',
+        'Prohibida circulación fines de semana y festivos.'
+      ];
+    }
+  }
+
+  const extrasText = extras.map(e => `   • ${e}`).join('\n') || '   • Sin requisitos adicionales.';
+
+  document.getElementById('esp-resultado').textContent =
+`📋 DIAGNÓSTICO LEGAL — CONVOY ESPECIAL
+${'─'.repeat(48)}
+📐 DATOS: Ancho ${ancho}m | Long. ${longitud}m | Masa ${masa}t | Alt. ${altura}m
+
+🔹 CLASIFICACIÓN:  ${categoria}
+🔹 VELOCIDAD MÁX:  ${velocidad}
+🔹 ESCOLTA/PILOTO: ${escolta}
+
+📋 REQUISITOS:
+${extrasText}
+
+🚨 RESTRICCIONES GENERALES DGT:
+   1. Prohibido Viernes 13:00 → Lunes 00:00 y vísperas festivos.
+   2. Obligatorio portar copia de autorización en el vehículo.
+   3. En caso de incidencia, comunicar inmediatamente a la DGT.`;
+}
+
+// ============================================================
+// 4. GPS (CORREGIDO DE ENLACES ROTOS)
+// ============================================================
+let mapaCargado = false;
+const origenCoords = '37.162,-5.908'; // Coordenadas Los Palacios
+
+function iniciarMapa() {
+  if (mapaCargado) return;
+  mapaCargado = true;
+  const iframe = document.getElementById('map-iframe');
+  iframe.src = `https://www.openstreetmap.org/export/embed.html?bbox=-6.05%2C37.12%2C-5.85%2C37.20&layer=mapnik&marker=${origenCoords}`;
+}
+
+function calcularRutaGPS() {
+  const destino = document.getElementById('gps-destino').value.trim();
+  if (!destino) return;
+
+  const res = document.getElementById('gps-resultado');
+  res.textContent = '🔍 Calculando ruta optimizada para vehículos pesados...';
+
+  const altura = vehiculoActual === 'ESPECIAL'
+    ? (parseFloat(document.getElementById('esp-altura').value) || 4.30)
+    : vehiculoActual === 'CAMIÓN' ? 4.0 : 3.5;
+
+  // URL corregida a la API de navegación oficial de Google Maps
+  const url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origenCoords)}&destination=${encodeURIComponent(destino)}&travelmode=driving`;
+  window.open(url, '_blank');
+
+  const iframe = document.getElementById('map-iframe');
+  iframe.src = `https://www.openstreetmap.org/export/embed.html?bbox=-6.5%2C36.5%2C-5.0%2C38.0&layer=mapnik`;
+
+  const velocidades = { 'CAMIÓN': 80, 'AUTOBÚS': 90, 'ESPECIAL': 50 };
+  const vel = velocidades[vehiculoActual] || 80;
+
+  res.textContent =
+`%\u0048% ITINERARIO PROFESIONAL [${vehiculoActual}]
+${'─'.repeat(50)}
+📍 Origen:  Los Palacios y Villafranca (Sevilla)
+🏁 Destino: ${destino}
+🚗 Vel. media estimada: ${vel} km/h
+🔍 Altura vehículo: ${altura}m
+
+ℹ️ Ruta abierta de forma segura en Google Maps Navegación →
+
+${vehiculoActual === 'CAMIÓN' ? '• RESTRICCIONES: Rutas de mercancías activas.\n• VEL. MÁX: 90 km/h en autovías.' :
+  vehiculoActual === 'AUTOBÚS' ? '• Acceso carriles Bus-VAO y estaciones urbanas.\n• VEL. MÁX: 100 km/h en autovías.' :
+  '• ⚠️ CONVOY ESPECIAL: Rutómetro DGT obligatorio.\n• Verificar todos los gálibos en itinerario.'}
+
+💡 CONSEJO: Usa la vista Satélite de Google Maps para detectar gálibos bajos visualmente.`;
+}
+
+function abrirGoogleMaps() {
+  const destino = document.getElementById('gps-destino').value.trim();
+  const url = destino
+    ? `https://www.google.com/maps/dir/?api=1&origin=Los+Palacios+y+Villafranca+Sevilla&destination=${encodeURIComponent(destino)}&travelmode=driving`
+    : `https://www.google.com/maps/@${origenCoords},14z`;
+  window.open(url, '_blank');
+}
+
+function abrirStreetView() {
+  const url = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${origenCoords}`;
+  window.open(url, '_blank');
+}
+
+function reiniciarGPS() {
+  document.getElementById('gps-destino').value = '';
+  document.getElementById('gps-resultado').textContent = 'Introduce un destino para trazar la ruta con restricciones para vehículos pesados.';
+  const iframe = document.getElementById('map-iframe');
+  iframe.src = `https://www.openstreetmap.org/export/embed.html?bbox=-6.3%2C36.8%2C-5.3%2C37.5&layer=mapnik&marker=${origenCoords}`;
+}
+
+// ============================================================
+// 5. DGT
+// ============================================================
+function consultarDGT() {
+  const dia = document.getElementById('dgt-dia').value;
+  const mes = document.getElementById('dgt-mes').value;
+  const anio = document.getElementById('dgt-anio').value;
+
+  const ancho = document.getElementById('esp-ancho')?.value || 'N/A';
+  const longitud = document.getElementById('esp-longitud')?.value || 'N/A';
+  const peso = document.getElementById('esp-masa')?.value || 'N/A';
+
+  let prompt = `Actúa como inspector de tráfico de la DGT de España. Determina técnicamente las restricciones de circulación aplicables el: '${dia} de ${mes} de ${anio}'. Identifica qué día de la semana es y si hay festividades o periodos de alta ocupación.\n\n■ VEHÍCULO:\n- Categoría: ${vehiculoActual}\n`;
+
+  if (vehiculoActual === 'ESPECIAL') {
+    prompt += `- Convoy: Ancho ${ancho}m, Longitud ${longitud}m, Masa ${peso}t.\n`;
+  }
+
+  prompt += `\nResponde con este esquema:\n1. 🚦 ¿CIRCULACIÓN PERMITIDA? (Habilitado / Prohibido / Condicionado)\n2. ⏱️ HORARIOS DE RESTRICCIÓN: Franjas horarias exactas.\n3. 🗺️ TRAMOS AFECTADOS: Red RIMP o puntos conflictivos.\n4. 📦 EXCEPCIONES Y MERCANCÍAS EXENTAS.`;
+
+  geminiStream(prompt, 'dgt-resultado');
+}
+
+// ============================================================
+// 6. LOTT
+// ============================================================
+function analizarLOTT() {
+  const seleccion = document.getElementById('lott-combo').value;
+  const prompt = `Analiza detalladamente bajo la LOTT española (Ley 16/1987) el supuesto: '${seleccion}'.\nResponde con:\n1. Clasificación de gravedad (Leve / Grave / Muy Grave).\n2. Cuantía exacta de la sanción (€) según baremo actual.\n3. Afectación a la pérdida de honorabilidad empresarial.\n4. Artículo específico de la LOTT infringido.\n5. Posibilidades de reducción por pronto pago o conformidad.`;
+  geminiStream(prompt, 'lott-resultado');
+}
+
+// ============================================================
+// 7. NORMATIVA UE
+// ============================================================
+function buscarNormativa() {
+  const query = document.getElementById('norm-query').value.trim();
+  if (!query) return;
+  const prompt = `Explica de forma directa el contenido regulatorio del concepto europeo de transporte: '${query}'. Incluye: tiempos máximos, excepciones vigentes, obligaciones en cabina y sanciones típicas.`;
+  geminiStream(prompt, 'norm-resultado');
+}
+
+// ============================================================
+// 8. ZBE
+// ============================================================
+function verificarZBE() {
+  const ciudad = document.getElementById('zbe-ciudad').value;
+  const etiqueta = document.getElementById('zbe-distintivo').value;
+  const prompt = `Determina el acceso de un vehículo de transporte pesado con distintivo ambiental '${etiqueta}' a la ZBE de ${ciudad}. Indica: si está permitido el acceso, moratorias activas, restricciones por tonelaje, horarios de carga/descarga y multas aplicables.`;
+  geminiStream(prompt, 'zbe-resultado');
+}
+
+// ============================================================
+// 9. RECURSOS
+// ============================================================
+function generarRecurso() {
+  const hecho = document.getElementById('rec-hecho').value.trim();
+  const causa = document.getElementById('rec-causa').value.trim();
+  if (!hecho) return;
+  const prompt = `Actúa como abogado experto en derecho del transporte en España. Redacta una plantilla concisa de Pliego de Descargo para:\n- Hecho denunciado: ${hecho}\n- Motivo de defensa: ${causa || 'A desarrollar por el interesado'}\n\nEstructura: Encabezado (a Inspección de Transportes) → Hechos → Alegaciones jurídicas → Suplico. Tono formal. Máximo 400 palabras.`;
+  geminiStream(prompt, 'rec-resultado');
+}
+
+// ============================================================
+// 10. ASISTENTE IA
+// ============================================================
+function preguntarIA() {
+  const query = document.getElementById('ia-prompt').value.trim();
+  if (!query) return;
+  preguntaRapida(query);
+}
+
+function preguntaRapida(texto) {
+  document.getElementById('ia-prompt').value = texto;
+  const prompt = `Actúas como copiloto experto en transporte por carretera europeo. Responde de forma directa, clara y técnica:\n\n'${texto}'`;
+  geminiStream(prompt, 'ia-resultado');
+}
+
+// ============================================================
+// 11. TIQUE
+// ============================================================
+function cargarTique(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const dataUrl = e.target.result;
+    imagenTiqueBase64 = dataUrl.split(',')[1];
+    const mimeType = file.type;
+
+    document.getElementById('tique-preview').src = dataUrl;
+    document.getElementById('tique-preview').dataset.mime = mimeType;
+    document.getElementById('tique-preview-wrap').style.display = 'block';
+    document.getElementById('tique-filename').textContent = file.name;
+    document.getElementById('upload-zone').style.borderColor = 'var(--cyan)';
+  };
+  reader.readAsDataURL(file);
+}
+
+function analizarTique() {
+  if (!imagenTiqueBase64) {
+    document.getElementById('tique-resultado').textContent = '❌ Carga una imagen primero.';
+    return;
+  }
+  const mimeType = document.getElementById('tique-preview').dataset.mime || 'image/jpeg';
+  const prompt = `Analiza esta imagen de tique de tacógrafo digital. Genera un informe directo, sin saludos. Usa esta estructura exacta:\n\n🔍 DETECCIONES CLAVE:\n- [Dato detectado]\n\n⚖️ INFRACCIONES IDENTIFICADAS:\n- [Infracción concreta o 'Ninguna detectada']\n\n💡 ACCIÓN RECOMENDADA:\n- [Consejo directo de 1 frase].`;
+  geminiStream(prompt, 'tique-resultado', true, imagenTiqueBase64, mimeType);
+}
+</script>
+
+<script>
+const manifest = {
+  name: 'Copiloto Inteligente de Transporte',
+  short_name: 'Copiloto v2.8',
+  description: 'Tacógrafo digital, GPS, restricciones DGT y asistente IA para transportistas',
+  start_url: '.',
+  display: 'standalone',
+  background_color: '#0B0F19',
+  theme_color: '#06B6D4',
+  orientation: 'portrait-primary',
+  icons: [
+    { src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%230F172A"/><text y="68" x="50" text-anchor="middle" font-size="60">🚛</text></svg>', sizes: '192x192', type: 'image/svg+xml' },
+    { src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%230F172A"/><text y="68" x="50" text-anchor="middle" font-size="60">🚛</text></svg>', sizes: '512x512', type: 'image/svg+xml' }
+  ]
+};
+const blob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+const manifestUrl = URL.createObjectURL(blob);
+const link = document.createElement('link');
+link.rel = 'manifest';
+link.href = manifestUrl;
+document.head.appendChild(link);
+</script>
+
 </body>
 </html>
